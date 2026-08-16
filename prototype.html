@@ -32,14 +32,8 @@
   <header class="header"><div class="header-main"><div class="title">HUNDRED LAYERS</div><div class="subtitle">Playable Prototype v0.1.1 / 探索ループ検証用</div></div><div class="header-time"><div class="gametime-year" id="gameTimeYear"></div><div class="gametime-date" id="gameTimeDate"></div><div class="gametime-detail" id="gameTimeDetail"></div></div></header>
   <div class="layout">
     <aside>
-      <section class="panel"><h2>世界共通クエスト</h2><div class="panel-body">
-        <p class="assumption">PROTOTYPE ASSUMPTION：単一プレイヤーの探索成果を世界全体の成果として扱うローカルモック</p>
-        <div class="label">進行中のクエスト</div><div class="value" id="worldQuestTitle"></div>
-        <div class="quest-text" id="worldQuestText"></div>
-        <div class="label">世界共通進捗</div><div class="value" id="worldProgress"></div><div class="bar world"><i id="worldProgressBar"></i></div>
-      </div></section>
       <section class="panel"><h2>ロケーション情報</h2><div class="panel-body">
-        <div class="label">到達階層</div><div class="value">第1層</div>
+        <div class="label">現在階層</div><div class="value">第1層</div>
         <div class="label">現在地</div><div class="value" id="location"></div>
         <div id="progressInfo"><div class="label">個人の探索深度</div><div class="value" id="depth"></div><div class="bar"><i id="progressBar"></i></div><div class="label">個人踏破率</div><div class="value" id="progress"></div></div>
         <div class="label">ロケーション移動</div><div class="location-actions"><button id="locationTown">町へ</button><button class="primary" id="locationCave">洞窟へ</button></div>
@@ -56,6 +50,12 @@
         <div class="label">所持金</div><div class="value" id="gold"></div>
         <div class="label">所持品</div><table class="items"><tr><td>薬草</td><td id="itemHerb"></td></tr><tr><td>鉄鉱石</td><td id="itemOre"></td></tr><tr><td>古い硬貨</td><td id="itemCoin"></td></tr><tr><td>ゴブリンの牙</td><td id="itemFang"></td></tr><tr><td>コウモリの翼膜</td><td id="itemWing"></td></tr><tr><td>スライムの粘液</td><td id="itemSlime"></td></tr><tr><td>オークの角</td><td id="itemHorn"></td></tr></table>
         <div class="save-line"><span>自動保存</span><span class="save-state" id="saveState">準備完了</span></div>
+      </div></section>
+      <section class="panel"><h2>世界情報</h2><div class="panel-body">
+        <p class="assumption">PROTOTYPE ASSUMPTION：単一プレイヤーの探索成果を世界全体の成果として扱うローカルモック</p>
+        <div class="label">世界共通クエスト</div><div class="value" id="worldQuestTitle"></div>
+        <div class="quest-text" id="worldQuestText"></div>
+        <div class="label">世界共通進捗</div><div class="value" id="worldProgress"></div><div class="bar world"><i id="worldProgressBar"></i></div>
       </div></section>
       <section class="panel"><h2>プロトタイプ操作</h2><div class="panel-body"><button class="danger" id="reset" style="width:100%">プロトタイプを初期化</button></div></section>
     </aside>
