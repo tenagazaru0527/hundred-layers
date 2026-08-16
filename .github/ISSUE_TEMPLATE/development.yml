@@ -1,0 +1,73 @@
+name: 開発Issue
+description: 機能、修正、文書、運用変更のためのIssueを作成する
+title: ""
+labels: []
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: 種別
+      options:
+        - feature
+        - fix
+        - docs
+        - chore
+    validations:
+      required: true
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: 目的
+      description: このIssueで達成することを記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+      description: 対応が必要になった理由や現状を記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 実装・変更対象
+      description: 変更する機能、文書、ファイルなどを記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: 非対象
+      description: このIssueでは対応しない内容を記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: 受入条件
+      description: 完了と判断できる条件をチェックリストなどで記載してください。
+      placeholder: "- [ ] 条件を記載"
+    validations:
+      required: true
+
+  - type: textarea
+    id: human-verification
+    attributes:
+      label: Human Verification
+      description: 人間による確認が必要な場合は具体的な項目を、不要な場合は「不要」と記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: related
+    attributes:
+      label: 関連設計書・関連Issue・PR
+      description: 関連する設計書、Issue、Pull Requestへの参照を記載してください。なければ「なし」と記載してください。
+    validations:
+      required: true
