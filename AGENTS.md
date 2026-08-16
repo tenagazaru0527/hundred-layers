@@ -21,3 +21,7 @@
 - ユーザーが全体整合確認を明示した
 
 `docs/` 全体や `docs/minutes/` の全文確認を通常動作にしない。設計経緯が必要な場合だけ `docs/minutes/` を参照する。
+
+## GitHub運用
+
+- Issue・Pull Requestの作成・更新時は、`CONTRIBUTING.md`の命名・本文ルールに従う。
