@@ -856,7 +856,6 @@
 
 - 未使用SP / APの上限
 - SP / APの振り直しを許可するか
-- AP必要量を全アビリティLvで1固定にするか
 - 世界終了時の未使用SP / APの扱い
 
 現在のPrototypeでは旧 `parameterPoints` / `skillPoints` を保持し、STR / VIT / DEX / AGIへパラメータポイントを割り振り可能で、物理戦闘へ接続済みである。INT / MNDへの割り振りと、AP／アビリティ／スキルは未実装である。
