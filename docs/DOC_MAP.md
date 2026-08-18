@@ -18,7 +18,7 @@
 | 探索 / ダンジョン / 深度 | `GAME_DESIGN.md`「4. 探索」「5. ダンジョン深度・踏破率」 | `PROTOTYPE.md`「4. プレイヤーが行うこと」「5. 探索イベント」「7. ダンジョン深度・踏破率」 | `OPEN_QUESTIONS.md`「2. P0：プロトタイプ実装前に決める事項」「3. P1：探索プロトタイプで検証する事項」「5.4 ダンジョン深度と探索イベント」 |
 | スタミナ | `GAME_DESIGN.md`「4.2 スタミナ」 | `PROTOTYPE.md`「6. スタミナ」 | `OPEN_QUESTIONS.md`「2.1 スタミナ投入量」「3.2 スタミナ投入量が本当に『判断』になるか」「3.6 スタミナ回復速度」「12.2 スタミナ」 |
 | 戦闘 / ダメージ / 戦術 | `GAME_DESIGN.md`「6. 通常戦闘」「21. 基礎ステータスを用いたダメージ計算」 | `PROTOTYPE.md`「8.1 戦闘と育成」 | `OPEN_QUESTIONS.md`「4. P2：通常探索・戦闘に関する未決事項」「15. P1／P2：ダメージ計算に関する未決事項」 |
-| 能力値 / 成長 / EXP | `GAME_DESIGN.md`「18. 基礎ステータス」「19. EXP・レベル・成長ポイント」 | `PROTOTYPE.md`「8.1 戦闘と育成」 | `OPEN_QUESTIONS.md`「12.3 基礎ステータス」「13. P1／P2：EXP・レベル・成長ポイントに関する未決事項」 |
+| 能力値 / 成長 / EXP | `GAME_DESIGN.md`「18. 基礎ステータス」「19. EXP・レベル・成長ポイント」 | `PROTOTYPE.md`「8.1 戦闘と育成」 | `OPEN_QUESTIONS.md`「12.3 基礎ステータス」「13. P1／P2：EXP・レベル・成長に関する未決事項」 |
 | HP / 帰還 / 宿屋 | `GAME_DESIGN.md`「22. 探索中のHP持越しと街への帰還」 | `PROTOTYPE.md`「8.2 HP持越しと宿屋」 | `OPEN_QUESTIONS.md`「4.5 探索失敗・撤退」「4.6 HP持越し・宿屋」 |
 | アイテム / 素材 / Gold / 経済 | `GAME_DESIGN.md`「6.3 戦闘報酬・素材換金」 | `PROTOTYPE.md`「8.3 固有素材とGold」 | `OPEN_QUESTIONS.md`「4.3 戦闘報酬とロケーション」「4.4 素材と経済」 |
 | ショップ / 装備 | `GAME_DESIGN.md`「23. ショップと装備変更」 | `PROTOTYPE.md`「15.1 ショップ・装備」 | `OPEN_QUESTIONS.md`「4.7 ショップと装備」 |
