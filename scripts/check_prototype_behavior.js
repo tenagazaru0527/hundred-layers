@@ -94,12 +94,14 @@ equal("暦: 翌年の年数", nextYear.year, 2);
 check("暦: 年・日付・時刻を内部計算として保持", Number.isFinite(first.year) && Number.isFinite(first.dayOfMonth) && typeof first.clock === "string");
 
 api.render();
-const calendarText = ["calMonth", "calWeek", "calWeekday", "calSpecialName"]
+const calendarText = ["calMonth", "calDay", "calSpecialName"]
   .map((id) => String(elements[id] ? elements[id].textContent : "")).join(" ");
 check("暦UI: 年を表示しない", !/年/.test(calendarText), calendarText);
 check("暦UI: 具体日付を表示しない", !/日$|\d+日/.test(calendarText), calendarText);
 check("暦UI: 時刻を表示しない", !/\d{1,2}:\d{2}/.test(calendarText), calendarText);
 check("暦UI: 月名を表示する", /\S/.test(String(elements.calMonth.textContent)));
+const shownDay = api.calendarParts();
+equal("暦UI: 日行は第N の 曜日 をまとめて表示する", elements.calDay.textContent, `第${shownDay.week}の${shownDay.weekday}`);
 check("暦UI: 通常日は特別日行を隠す", elements.calSpecial.hidden === true);
 check("暦UI: 通常日は月・曜日行を表示する", elements.calNormalMonth.hidden === false && elements.calNormalDay.hidden === false);
 
