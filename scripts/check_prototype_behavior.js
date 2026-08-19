@@ -139,9 +139,9 @@ api.state.staminaSpent = 250;
 equal("スタミナ: 負数を返さない", api.currentStamina(open), 0);
 
 /* ---------- 旧セーブからの移行 ---------- */
-const now = open + 3600 * 1000;
+const now = Date.now();
 const legacy = {
-  stamina: 42, lastStaminaUpdate: now - 60000, worldStart: now - 500000,
+  stamina: 42, lastStaminaUpdate: now - 5 * 60000, worldStart: now - 500000,
   gold: 321, level: 5, exp: 12, parameterPoints: 3, skillPoints: 2, currentHp: 77,
   items: { "薬草": 4, "オークの角": 1 }, location: "cave", explorationDepth: 61,
   ownedEquipment: ["trainingDagger", "travelerClothes", "ironDagger"],
@@ -165,8 +165,31 @@ equal("移行: システムログを保持", ms.systemLog.length, 1);
 check("移行: 累計使用スタミナが負数にならない", ms.staminaSpent >= 0, `spent=${ms.staminaSpent}`);
 check("移行: 旧フィールドを保持しない",
   ms.stamina === undefined && ms.lastStaminaUpdate === undefined && ms.worldStart === undefined);
+// 旧仕様は最大100・1分1回復。保存値へ lastStaminaUpdate からの未反映回復分を足した値を維持する
+const legacyExpected = Math.min(100, legacy.stamina + Math.floor((Date.now() - legacy.lastStaminaUpdate) / 60000));
+equal("移行: 未反映回復分の期待値", legacyExpected, 47);
 const migratedNow = migrated.api.currentStamina(Date.now());
-check("移行: 移行時点の現在スタミナが旧値と一致", Math.abs(migratedNow - legacy.stamina) <= 1, `stamina=${migratedNow}`);
+check("移行: 未反映回復を含む旧仕様上の現在スタミナを維持",
+  Math.abs(migratedNow - legacyExpected) <= 1, `stamina=${migratedNow}, expected=${legacyExpected}`);
+
+const saved = JSON.parse(migrated.store[CONFIG.storageKey] || "null");
+check("移行: 無操作でもlocalStorageへ書き戻す", saved !== null);
+check("移行: 保存内容が新形式", saved && Number.isFinite(saved.staminaSpent)
+  && saved.stamina === undefined && saved.lastStaminaUpdate === undefined && saved.worldStart === undefined,
+  JSON.stringify(saved && { staminaSpent: saved.staminaSpent, stamina: saved.stamina, lastStaminaUpdate: saved.lastStaminaUpdate, worldStart: saved.worldStart }));
+equal("移行: 保存内容が他状態を保持", saved && saved.gold, 321);
+
+// 保存済みデータを再読込しても再移行にならない
+const reloaded = loadPrototype(file, migrated.store);
+equal("再読込: 累計使用量が保存値と一致", reloaded.api.state.staminaSpent, saved.staminaSpent);
+equal("再読込: Goldを保持", reloaded.api.state.gold, 321);
+
+// 旧仕様の上限100を超えて回復させない
+const capped = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({ stamina: 95, lastStaminaUpdate: Date.now() - 3600 * 1000, gold: 1 }),
+});
+const cappedNow = capped.api.currentStamina(Date.now());
+check("移行: 未反映回復は旧仕様の最大100で頭打ちにする", Math.abs(cappedNow - 100) <= 1, `stamina=${cappedNow}`);
 
 /* ---------- 参加時期に依存しないこと ---------- */
 const later = loadPrototype(file, {});

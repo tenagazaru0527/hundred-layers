@@ -178,7 +178,13 @@ function normalizeStats(stats){const result={...CONFIG.stats.initial};CONFIG.sta
 function normalizeCount(value,fallback,min){return Number.isInteger(value)&&value>=min?value:fallback}
 function requiredExp(level){return CONFIG.growth.requiredExp(level)}
 const initial=()=>({staminaSpent:0,explorationDepth:0,gold:0,items:{},history:[],systemLog:[],location:'town',lastResult:null,bossMessage:false,tactics:defaultTactics(),stats:{...CONFIG.stats.initial},level:CONFIG.growth.initialLevel,exp:CONFIG.growth.initialExp,parameterPoints:CONFIG.growth.initialParameterPoints,skillPoints:CONFIG.growth.initialSkillPoints,currentHp:CONFIG.battle.player.maxHp,ownedEquipment:[CONFIG.battle.equipment.starter.weapon,CONFIG.battle.equipment.starter.armor],equippedWeapon:CONFIG.battle.equipment.starter.weapon,equippedArmor:CONFIG.battle.equipment.starter.armor});
+// 旧スタミナ仕様（最大100・1分1回復・現在値保存）の定数。移行計算にのみ使用する
+const LEGACY_STAMINA={maxStamina:100,recoveryMs:60000};
+// 旧スタミナ形式から移行したかどうか。load() の中で立てる
+let staminaMigrated=false;
 let state=load(),worldState=loadWorld(),saveTimer;
+// 旧形式から移行した場合、無操作でもこの時点で新形式を書き戻し、次回の再移行を避ける
+if(staminaMigrated){save();staminaMigrated=false}
 let activeView='main';
 function equipmentList(kind){return CONFIG.battle.equipment[kind]}
 function findEquipment(kind,id){return equipmentList(kind).find(entry=>entry.id===id)}
@@ -210,9 +216,10 @@ function worldQuest(){const quest=CONFIG.world.quest;return worldComplete()?{tit
 function addWorldProgress(amount){if(!(amount>0)||worldComplete())return 0;const gain=Math.min(amount,CONFIG.world.maxProgress-worldState.progress);worldState.progress+=gain;return gain}
 // 100%到達時の解放は1回だけ成立させる
 function unlockBoss(){if(worldState.bossUnlocked||!worldComplete())return false;worldState.bossUnlocked=true;worldState.step='bossFound';return true}
-// 旧セーブ（上限100・現在値保存）からの移行。累計使用量は復元できないため、
-// 移行時点の現在スタミナが旧 stamina と一致するよう累計使用量を逆算する（PROTOTYPE ASSUMPTION）
-function migrateStaminaSpent(saved,fallback,now=Date.now()){if(Number.isFinite(saved.staminaSpent)&&saved.staminaSpent>=0)return saved.staminaSpent;if(Number.isFinite(saved.stamina)&&saved.stamina>=0)return Math.max(0,accruedStamina(now)-saved.stamina);return fallback}
+// 旧セーブからの移行。累計使用量は復元できないため、保存値と lastStaminaUpdate からの
+// 未反映回復分を足した「旧仕様上の現在スタミナ」を求め、その値を維持するよう逆算する（PROTOTYPE ASSUMPTION）
+function legacyStamina(saved,now=Date.now()){const stored=Math.max(0,saved.stamina),elapsed=Number.isFinite(saved.lastStaminaUpdate)&&saved.lastStaminaUpdate>0?Math.max(0,Math.floor((now-saved.lastStaminaUpdate)/LEGACY_STAMINA.recoveryMs)):0;return Math.min(LEGACY_STAMINA.maxStamina,stored+elapsed)}
+function migrateStaminaSpent(saved,fallback,now=Date.now()){if(Number.isFinite(saved.staminaSpent)&&saved.staminaSpent>=0)return saved.staminaSpent;if(Number.isFinite(saved.stamina)&&saved.stamina>=0){staminaMigrated=true;return Math.max(0,accruedStamina(now)-legacyStamina(saved,now))}return fallback}
 function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 function writeLog(message){state.systemLog.unshift({at:new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),message});state.systemLog=state.systemLog.slice(0,CONFIG.logLimit)}
 function updateStatus(){const inCave=state.location==='cave';const cal=calendarParts();el('calNormalMonth').hidden=cal.special;el('calNormalDay').hidden=cal.special;el('calSpecial').hidden=!cal.special;if(cal.special){el('calSpecialName').textContent=cal.specialName}else{el('calMonth').textContent=cal.month;el('calDay').textContent=`第${cal.week}の${cal.weekday}`}el('stamina').textContent=formatStamina(currentStamina());el('location').textContent=inCave?'始まりの洞窟':'はじまりの街';el('clearRateBox').hidden=!inCave;el('progress').textContent=`${worldState.progress}%`;el('progressBar').style.width=`${worldState.progress}%`;const quest=worldQuest();el('worldQuestTitle').textContent=quest.title;el('worldQuestText').textContent=quest.text;el('locationTown').disabled=!inCave;el('locationCave').disabled=inCave;el('gold').textContent=`${state.gold} Gold`;el('weaponName').textContent=`${equippedWeapon().name}（ATK ${equippedWeapon().atk}）`;el('armorName').textContent=`${equippedArmor().name}（DEF ${equippedArmor().def}）`;const need=requiredExp(state.level),maxHp=CONFIG.battle.player.maxHp;el('level').textContent=`Lv.${state.level}`;el('statusPoints').textContent=state.parameterPoints;el('abilityPoints').textContent=state.skillPoints;el('hp').textContent=`${state.currentHp} / ${maxHp}`;el('hpBar').style.width=`${Math.round(state.currentHp/maxHp*100)}%`;el('exp').textContent=`${state.exp} / ${need}`;el('expBar').style.width=`${Math.min(100,Math.round(state.exp/need*100))}%`;Object.entries(VIEW_BUTTONS).forEach(([view,id])=>el(id).classList.toggle('primary',activeView===view))}
