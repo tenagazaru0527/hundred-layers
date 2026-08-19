@@ -99,6 +99,27 @@ def check_inline_javascript(scripts: list[str]) -> None:
         fail(f"inline JavaScript syntax error\n{result.stderr.strip()}")
 
 
+def check_behavior(prototype: Path) -> None:
+    """Run the calendar and stamina behaviour checks with a fixed clock."""
+    checker = Path(__file__).with_name("check_prototype_behavior.js")
+    if not checker.is_file():
+        fail(f"{checker.name} does not exist")
+
+    node = shutil.which("node")
+    if not node:
+        fail("node is required for prototype behaviour checks")
+
+    result = subprocess.run(
+        [node, str(checker), str(prototype)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        fail("prototype behaviour check failed\n" + (result.stderr or result.stdout).strip())
+    print((result.stdout or "").strip())
+
+
 def main() -> None:
     prototype = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("prototype.html")
     if not prototype.is_file():
@@ -128,6 +149,7 @@ def main() -> None:
         fail("external resource reference found: " + ", ".join(external_resources))
 
     check_inline_javascript(parser.inline_scripts)
+    check_behavior(prototype)
     print("check_prototype.py: PASS")
 
 
