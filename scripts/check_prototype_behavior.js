@@ -17,6 +17,7 @@ const EXPORTS = [
   "spendStamina", "formatStamina", "migrateStaminaSpent", "explore", "load", "save", "render",
   "move", "setLocationAction", "locationAction", "defaultLocationAction",
   "attributeTotal", "resistanceTotal", "baseDamage", "actionDamage", "simulateUtility",
+  "abilityLevel", "canRaiseAbility", "raiseAbility", "actionsFor", "validTactics", "gainExp",
   "runBattle", "rest", "battleHtml",
 ];
 
@@ -140,8 +141,14 @@ for (const id of ["statusBody", "abilityBody", "skillBody", "itemsBody"]) {
 }
 check("ステータス: SP割り振りボタンを保持", /data-allocate="STR"/.test(elements.statusBody.innerHTML));
 check("ステータス: INT / MNDを効果未実装として表示", /効果未実装/.test(elements.statusBody.innerHTML));
+check("ステータス: APを表示する", /AP/.test(elements.statusBody.innerHTML), elements.statusBody.innerHTML);
+check("ステータス: APをアビリティパネルから使用できる旨を説明する",
+  /AP（アビリティポイント）[^。]*アビリティパネル[^。]*使用/.test(elements.statusBody.innerHTML), elements.statusBody.innerHTML);
+check("ステータス: APが使用未実装という旧説明を残さない",
+  !/AP（アビリティポイント）は保持のみ/.test(elements.statusBody.innerHTML)
+  && !/AP[^。]*使用は未実装/.test(elements.statusBody.innerHTML), elements.statusBody.innerHTML);
 check("アビリティ: 未使用APを表示", /AP /.test(elements.abilityBody.innerHTML));
-check("スキル: 強打の仮MPコストを表示", /MP 10/.test(elements.skillBody.innerHTML));
+check("スキル: 強打の仮MPコストを表示", /MPコスト<\/td><td>10</.test(elements.skillBody.innerHTML), elements.skillBody.innerHTML);
 check("所持品: 所持金と所持品を表示", /Gold/.test(elements.itemsBody.innerHTML) && /薬草/.test(elements.itemsBody.innerHTML));
 equal("MP UI: 現在値 / 最大値を表示", elements.mp.textContent, `${api.state.currentMp} / ${CONFIG.battle.player.maxMp}`);
 equal("MP UI: 初期状態のバーは100%", elements.mpBar.style.width, "100%");
@@ -253,6 +260,104 @@ for (const action of CONFIG.battle.player.actions) {
   check(`プレイヤー行動: ${action.name} に旧powerが残っていない`, action.power === undefined);
 }
 
+/* ---------- Ability / Skill（Issue #71） ---------- */
+const abilityDefs = CONFIG.battle.abilities.list;
+equal("Ability: Prototypeでは1種のみ", abilityDefs.length, 1);
+const ability = abilityDefs[0];
+equal("Ability: 新規stateはLv0", api.abilityLevel(ability.id), 0);
+equal("Ability: 未習得時の利用可能行動は通常攻撃のみ", api.actionsFor(api.state.abilities).map((a) => a.id).join(","), "attack");
+equal("Ability: 未習得時の初期戦術は通常攻撃100%", JSON.stringify(api.state.tactics), JSON.stringify({ attack: 100 }));
+
+// AP不足では上げられない
+api.state.skillPoints = 0;
+check("Ability: AP不足では上げられない", api.canRaiseAbility(ability.id) === false);
+api.raiseAbility(ability.id);
+equal("Ability: AP不足時はLvが変わらない", api.abilityLevel(ability.id), 0);
+
+// AP1消費でLv+1、閾値到達でSkill習得
+api.state.skillPoints = 2;
+check("Ability: APがあれば上げられる", api.canRaiseAbility(ability.id) === true);
+api.raiseAbility(ability.id);
+equal("Ability: AP1消費でLv+1", api.abilityLevel(ability.id), 1);
+equal("Ability: APが1減る", api.state.skillPoints, 1);
+equal("Skill: Lv1で強打を習得扱いにする",
+  api.actionsFor(api.state.abilities).map((a) => a.id).join(","), "attack,skill");
+equal("Skill: 習得後の初期戦術は通常攻撃60 / 強打40", JSON.stringify(api.state.tactics), JSON.stringify({ attack: 60, skill: 40 }));
+check("Skill: 習得後の戦術合計が100", Object.values(api.state.tactics).reduce((a, b) => a + b, 0) === 100);
+check("Skill: 習得後の戦術設定が妥当", api.validTactics(api.state.tactics, api.state.abilities) === true);
+
+// Prototype上限を超えて上げられない
+check("Ability: Prototype上限へ到達すると上げられない", api.canRaiseAbility(ability.id) === false);
+api.raiseAbility(ability.id);
+equal("Ability: 上限を超えてLvが上がらない", api.abilityLevel(ability.id), ability.maxLevel);
+equal("Ability: 上限到達後はAPを消費しない", api.state.skillPoints, 1);
+
+// Ability UI / Skill UI
+api.render();
+check("Ability UI: Lvと未使用APを表示", /AP /.test(elements.abilityBody.innerHTML) && /Lv1/.test(elements.abilityBody.innerHTML));
+check("Ability UI: 習得済みスキルを表示", /強打/.test(elements.abilityBody.innerHTML));
+check("Ability UI: 上限到達でボタンをdisabledにする", /data-ability="[^"]*"\s+disabled/.test(elements.abilityBody.innerHTML), elements.abilityBody.innerHTML);
+check("Skill UI: 習得状態と習得条件を表示",
+  /習得済み/.test(elements.skillBody.innerHTML) && /斬撃術 Lv1/.test(elements.skillBody.innerHTML), elements.skillBody.innerHTML);
+check("Skill UI: 属性と種別を表示", /斬 1.42/.test(elements.skillBody.innerHTML) && /Active/.test(elements.skillBody.innerHTML));
+
+// 保存と再読込
+api.save();
+const savedAbility = JSON.parse(migratedStoreProbe()).abilities;
+function migratedStoreProbe() { return store[CONFIG.storageKey]; }
+equal("Ability: localStorageへ保存される", savedAbility[ability.id], 1);
+const reloadedAbility = loadPrototype(file, store);
+equal("Ability: 再読込後もLvを維持", reloadedAbility.api.abilityLevel(ability.id), 1);
+equal("Skill: 再読込後も習得状態を維持",
+  reloadedAbility.api.actionsFor(reloadedAbility.api.state.abilities).map((a) => a.id).join(","), "attack,skill");
+
+// 旧セーブ互換: Ability情報がなく、旧tacticsに強打比率が残っている場合
+const legacyAbility = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({
+    tactics: { attack: 60, skill: 40 }, gold: 55, level: 3, parameterPoints: 2, skillPoints: 3,
+    currentHp: 70, stats: { STR: 12, VIT: 10, DEX: 8, AGI: 8, INT: 8, MND: 8 },
+  }),
+});
+equal("旧セーブ: AbilityデータがなくてもLv0で読み込む", legacyAbility.api.abilityLevel(ability.id), 0);
+equal("旧セーブ: 未習得なら強打を戦術設定へ出さない",
+  JSON.stringify(legacyAbility.api.state.tactics), JSON.stringify({ attack: 100 }));
+equal("旧セーブ: 未習得なら強打を利用可能行動に含めない",
+  legacyAbility.api.actionsFor(legacyAbility.api.state.abilities).map((a) => a.id).join(","), "attack");
+equal("旧セーブ: Gold / Lv / SP / AP / HP / statsを保持",
+  [legacyAbility.api.state.gold, legacyAbility.api.state.level, legacyAbility.api.state.parameterPoints,
+   legacyAbility.api.state.skillPoints, legacyAbility.api.state.currentHp, legacyAbility.api.state.stats.STR].join(","),
+  "55,3,2,3,70,12");
+
+// 未習得状態では強打を実行しない
+const dummyEnemy = {
+  id: "ability-dummy", name: "検証用", probability: 1, maxHp: 999, exp: 0, material: null,
+  stats: { STR: 0, VIT: 0, DEX: 0, AGI: 0, INT: 0, MND: 0 },
+  actions: [{ name: "様子見", probability: 1, kind: "physical", attributes: { blunt: 0 } }], resistances: {},
+};
+legacyAbility.api.state.tactics = { attack: 0, skill: 100 };   // 未習得Skillへ全振りした不正な設定
+legacyAbility.api.state.currentHp = CONFIG.battle.player.maxHp;
+legacyAbility.api.state.currentMp = CONFIG.battle.player.maxMp;
+const legacyBattle = legacyAbility.api.runBattle([dummyEnemy]);
+check("旧セーブ: 未習得の強打を実行しない",
+  legacyBattle.turns.every((turn) => turn.playerAction === "通常攻撃"),
+  legacyBattle.turns.map((t) => t.playerAction).join(","));
+
+// LvUPでAPを得てAbilityへ使う縦切り
+const growth = loadPrototype(file, {});
+growth.api.state.exp = 0;
+growth.api.gainExp(500);
+check("縦切り: LvUPでAPを獲得する", growth.api.state.skillPoints > 0, String(growth.api.state.skillPoints));
+growth.api.raiseAbility(ability.id);
+equal("縦切り: 獲得したAPでAbility Lv1へ", growth.api.abilityLevel(ability.id), 1);
+growth.api.state.tactics = { attack: 0, skill: 100 };
+growth.api.state.currentHp = CONFIG.battle.player.maxHp;
+growth.api.state.currentMp = 10;
+const skillBattle = growth.api.runBattle([dummyEnemy]);
+equal("縦切り: 習得した強打をオートバトルで使用する", skillBattle.turns[0].playerAction, "強打");
+equal("縦切り: 強打でMPを10消費する", skillBattle.turns[0].mpSpent, 10);
+equal("縦切り: 強打の属性倍率を維持",
+  CONFIG.battle.player.actions.find((a) => a.id === "skill").attributes.slash, 1.42);
+
 /* ---------- MP（Issue #68） ---------- */
 equal("MP: 最大値はPrototype固定値", CONFIG.battle.player.maxMp, 50);
 equal("MP: 新規stateは最大MPで開始", api.state.currentMp, CONFIG.battle.player.maxMp);
@@ -262,6 +367,8 @@ const mpDummy = {
   id: "mp-dummy", name: "MP検証用", probability: 1, maxHp: 1, exp: 0, material: null,
   stats: { STR: 0, VIT: 0, DEX: 0, AGI: 0, INT: 0, MND: 0 }, actions: [], resistances: {},
 };
+// 強打はAbility Lv1で習得するため、MP検証の前に習得済みにする（Issue #71）
+api.state.abilities = { slashTraining: 1 };
 api.state.tactics = { attack: 0, skill: 100 };
 api.state.currentHp = CONFIG.battle.player.maxHp;
 api.state.currentMp = 20;
