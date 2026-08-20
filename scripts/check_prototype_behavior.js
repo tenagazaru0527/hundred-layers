@@ -17,7 +17,7 @@ const EXPORTS = [
   "spendStamina", "formatStamina", "migrateStaminaSpent", "explore", "load", "save", "render",
   "move", "setLocationAction", "locationAction", "defaultLocationAction",
   "attributeTotal", "resistanceTotal", "baseDamage", "actionDamage", "simulateUtility",
-  "abilityLevel", "canRaiseAbility", "raiseAbility", "actionsFor", "validTactics", "runBattle", "gainExp",
+  "abilityLevel", "canRaiseAbility", "raiseAbility", "actionsFor", "validTactics", "gainExp",
   "runBattle", "rest", "battleHtml",
 ];
 
@@ -141,6 +141,12 @@ for (const id of ["statusBody", "abilityBody", "skillBody", "itemsBody"]) {
 }
 check("ステータス: SP割り振りボタンを保持", /data-allocate="STR"/.test(elements.statusBody.innerHTML));
 check("ステータス: INT / MNDを効果未実装として表示", /効果未実装/.test(elements.statusBody.innerHTML));
+check("ステータス: APを表示する", /AP/.test(elements.statusBody.innerHTML), elements.statusBody.innerHTML);
+check("ステータス: APをアビリティパネルから使用できる旨を説明する",
+  /AP（アビリティポイント）[^。]*アビリティパネル[^。]*使用/.test(elements.statusBody.innerHTML), elements.statusBody.innerHTML);
+check("ステータス: APが使用未実装という旧説明を残さない",
+  !/AP（アビリティポイント）は保持のみ/.test(elements.statusBody.innerHTML)
+  && !/AP[^。]*使用は未実装/.test(elements.statusBody.innerHTML), elements.statusBody.innerHTML);
 check("アビリティ: 未使用APを表示", /AP /.test(elements.abilityBody.innerHTML));
 check("スキル: 強打の仮MPコストを表示", /MPコスト<\/td><td>10</.test(elements.skillBody.innerHTML), elements.skillBody.innerHTML);
 check("所持品: 所持金と所持品を表示", /Gold/.test(elements.itemsBody.innerHTML) && /薬草/.test(elements.itemsBody.innerHTML));
