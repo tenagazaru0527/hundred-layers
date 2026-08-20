@@ -17,6 +17,7 @@ const EXPORTS = [
   "spendStamina", "formatStamina", "migrateStaminaSpent", "explore", "load", "save", "render",
   "move", "setLocationAction", "locationAction", "defaultLocationAction",
   "attributeTotal", "resistanceTotal", "baseDamage", "actionDamage", "simulateUtility",
+  "runBattle", "rest", "battleHtml",
 ];
 
 function loadPrototype(file, storeSeed) {
@@ -63,7 +64,7 @@ function equal(label, actual, expected) {
 }
 
 const file = process.argv[2] || path.join(__dirname, "..", "prototype.html");
-const { api, elements } = loadPrototype(file);
+const { api, elements, store } = loadPrototype(file);
 const CONFIG = api.CONFIG;
 const open = CONFIG.stamina.worldOpenAt;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -140,7 +141,10 @@ for (const id of ["statusBody", "abilityBody", "skillBody", "itemsBody"]) {
 check("ステータス: SP割り振りボタンを保持", /data-allocate="STR"/.test(elements.statusBody.innerHTML));
 check("ステータス: INT / MNDを効果未実装として表示", /効果未実装/.test(elements.statusBody.innerHTML));
 check("アビリティ: 未使用APを表示", /AP /.test(elements.abilityBody.innerHTML));
+check("スキル: 強打の仮MPコストを表示", /MP 10/.test(elements.skillBody.innerHTML));
 check("所持品: 所持金と所持品を表示", /Gold/.test(elements.itemsBody.innerHTML) && /薬草/.test(elements.itemsBody.innerHTML));
+equal("MP UI: 現在値 / 最大値を表示", elements.mp.textContent, `${api.state.currentMp} / ${CONFIG.battle.player.maxMp}`);
+equal("MP UI: 初期状態のバーは100%", elements.mpBar.style.width, "100%");
 check("ロケーションメニュー: 街に宿屋・よろず屋・酒場がある",
   /宿屋/.test(elements.screen.innerHTML) && /よろず屋/.test(elements.screen.innerHTML) && /酒場/.test(elements.screen.innerHTML));
 // 現在地の行動（Issue #64）
@@ -249,6 +253,50 @@ for (const action of CONFIG.battle.player.actions) {
   check(`プレイヤー行動: ${action.name} に旧powerが残っていない`, action.power === undefined);
 }
 
+/* ---------- MP（Issue #68） ---------- */
+equal("MP: 最大値はPrototype固定値", CONFIG.battle.player.maxMp, 50);
+equal("MP: 新規stateは最大MPで開始", api.state.currentMp, CONFIG.battle.player.maxMp);
+equal("MP: 強打の仮コスト", CONFIG.battle.player.actions.find((action) => action.id === "skill").mpCost, 10);
+
+const mpDummy = {
+  id: "mp-dummy", name: "MP検証用", probability: 1, maxHp: 1, exp: 0, material: null,
+  stats: { STR: 0, VIT: 0, DEX: 0, AGI: 0, INT: 0, MND: 0 }, actions: [], resistances: {},
+};
+api.state.tactics = { attack: 0, skill: 100 };
+api.state.currentHp = CONFIG.battle.player.maxHp;
+api.state.currentMp = 20;
+const mpBattle1 = api.runBattle([mpDummy]);
+equal("MP: MP消費行動でcurrentMpが減る", api.state.currentMp, 10);
+equal("MP: 行動ログに消費量を保持", mpBattle1.turns[0].mpSpent, 10);
+equal("MP: 戦闘終了後も残MPを保持", mpBattle1.playerMp, 10);
+const mpBattle2 = api.runBattle([mpDummy]);
+equal("MP: 次戦へ残MPを持ち越す", mpBattle2.turns[0].playerMp, 0);
+const mpBattle3 = api.runBattle([mpDummy]);
+equal("MP: 不足時は通常攻撃へfallback", mpBattle3.turns[0].playerAction, "通常攻撃");
+equal("MP: fallback理由はMP不足", mpBattle3.turns[0].fallbackReason, "mp");
+equal("MP: 不足時も負数にならない", api.state.currentMp, 0);
+const mpLog = api.battleHtml(mpBattle3);
+check("MP: 戦闘ログでfallbackと残MPを確認できる", /MP不足/.test(mpLog) && /残MP/.test(mpLog), mpLog);
+const legacyBattleLog = api.battleHtml({
+  enemyName: "旧敵", enemyMaxHp: 10, result: "victory", playerHp: 5, enemyHp: 0,
+  turns: [{ turn: 1, playerAction: "通常攻撃", playerDamage: 10, playerCritical: false,
+    enemyAction: "行動なし", enemyDamage: 0, enemyCritical: false, playerHp: 5, enemyHp: 0, fallback: false }],
+});
+check("MP: 旧戦闘履歴にundefinedを表示しない", !/undefined/.test(legacyBattleLog), legacyBattleLog);
+
+api.state.location = "cave";
+api.state.currentHp = 1;
+api.state.currentMp = 0;
+api.move("town");
+equal("MP: 街へ移動しただけでは回復しない", api.state.currentMp, 0);
+api.rest();
+equal("宿屋: HPを最大まで回復", api.state.currentHp, CONFIG.battle.player.maxHp);
+equal("宿屋: MPを最大まで回復", api.state.currentMp, CONFIG.battle.player.maxMp);
+api.state.currentMp = 13;
+api.save();
+equal("MP: currentMpをlocalStorageへ保存", JSON.parse(store[CONFIG.storageKey]).currentMp, 13);
+api.state.currentMp = CONFIG.battle.player.maxMp;
+
 // Utility AIの行動選択に回帰がないこと
 equal("Utility AI: 通常時は殴打", api.simulateUtility("orc", 0.9, 0.9).action.name, "殴打");
 equal("Utility AI: 相手が低HPなら兜割り", api.simulateUtility("orc", 0.9, 0.3).action.name, "兜割り");
@@ -272,6 +320,7 @@ equal("移行: EXPを保持", ms.exp, 12);
 equal("移行: SPを保持", ms.parameterPoints, 3);
 equal("移行: APを保持", ms.skillPoints, 2);
 equal("移行: HPを保持", ms.currentHp, 77);
+equal("移行: MPがない旧セーブは最大MPで初期化", ms.currentMp, CONFIG.battle.player.maxMp);
 equal("移行: 所持品を保持", ms.items["薬草"], 4);
 equal("移行: 装備を保持", ms.equippedWeapon, "ironDagger");
 equal("移行: locationを保持", ms.location, "cave");
