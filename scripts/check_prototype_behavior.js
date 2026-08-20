@@ -15,6 +15,7 @@ const vm = require("vm");
 const EXPORTS = [
   "CONFIG", "state", "worldState", "calendarParts", "accruedStamina", "currentStamina",
   "spendStamina", "formatStamina", "migrateStaminaSpent", "explore", "load", "save", "render",
+  "move", "setLocationAction", "locationAction", "defaultLocationAction",
   "attributeTotal", "resistanceTotal", "baseDamage", "actionDamage", "simulateUtility",
 ];
 
@@ -142,12 +143,33 @@ check("アビリティ: 未使用APを表示", /AP /.test(elements.abilityBody.i
 check("所持品: 所持金と所持品を表示", /Gold/.test(elements.itemsBody.innerHTML) && /薬草/.test(elements.itemsBody.innerHTML));
 check("ロケーションメニュー: 街に宿屋・よろず屋・酒場がある",
   /宿屋/.test(elements.screen.innerHTML) && /よろず屋/.test(elements.screen.innerHTML) && /酒場/.test(elements.screen.innerHTML));
+// 現在地の行動（Issue #64）
+check("現在地の行動: 街の初期選択は宿屋", api.locationAction === "inn", api.locationAction);
+check("現在地の行動: 宿屋の内容を表示する", /宿屋で休む/.test(elements.screen.innerHTML));
+check("現在地の行動: 宿屋選択時によろず屋の内容を出さない", !/Gold\/個/.test(elements.screen.innerHTML));
+api.setLocationAction("store");
+check("現在地の行動: よろず屋へ切り替わる", api.locationAction === "store", api.locationAction);
+check("現在地の行動: 素材換金と装備を表示する",
+  /Gold\/個/.test(elements.screen.innerHTML) && /装備の購入・変更/.test(elements.screen.innerHTML));
+check("現在地の行動: よろず屋選択時に宿屋の内容を出さない", !/宿屋で休む/.test(elements.screen.innerHTML));
+check("現在地の行動: 街の本文に重複した移動ボタンがない", !/始まりの洞窟へ/.test(elements.screen.innerHTML));
+
+api.move("cave");
+check("ロケーション移動: 現在地が更新される", api.state.location === "cave");
+check("ロケーション移動: ダンジョンの初期選択は探索", api.locationAction === "explore", api.locationAction);
+check("現在地の行動: 探索の内容を表示する", /探索開始/.test(elements.screen.innerHTML));
+check("現在地の行動: 洞窟の本文に重複した移動ボタンがない", !/街へ戻る/.test(elements.screen.innerHTML));
+api.move("town");
+check("ロケーション移動: 街へ戻ると初期選択が宿屋へ戻る",
+  api.state.location === "town" && api.locationAction === "inn", api.locationAction);
+
 api.state.location = "cave";
 api.render();
 check("ロケーションメニュー: ダンジョンに探索・討伐・採取がある",
   /探索/.test(elements.screen.innerHTML) && /討伐/.test(elements.screen.innerHTML) && /採取/.test(elements.screen.innerHTML));
 check("ロケーションメニュー: 討伐・採取はdisabled", /<button disabled>討伐/.test(elements.screen.innerHTML) && /<button disabled>採取/.test(elements.screen.innerHTML));
 api.state.location = "town";
+api.setLocationAction("inn");
 api.render();
 
 /* ---------- スタミナ ---------- */
