@@ -114,6 +114,41 @@ equal("暦UI: 特別日の表示名", elements.calSpecialName.textContent, CONFI
 CONFIG.stamina.worldOpenAt = openBefore;
 api.render();
 
+/* ---------- 右カラムの構造（Issue #60） ---------- */
+const source = fs.readFileSync(file, "utf8");
+const foldIds = ["foldStatus", "foldAbility", "foldSkill", "foldItems"];
+for (const id of foldIds) {
+  const tag = source.match(new RegExp(`<details[^>]*id="${id}"[^>]*>`));
+  check(`右カラム: ${id} が details で存在する`, Boolean(tag), "見つからない");
+  if (tag) check(`右カラム: ${id} は初期状態で閉じている`, !/\bopen\b/.test(tag[0]), tag[0]);
+}
+check("右カラム: 情報パネルの下にロケーションメニューがある",
+  source.indexOf('id="foldItems"') < source.indexOf('id="locationPanel"'));
+check("右カラム: ロケーションメニューをアコーディオンで閉じない",
+  /<section[^>]*id="locationPanel"/.test(source));
+check("左カラム: 現在地ボタンを持たない", !/id="commandMain"/.test(source));
+check("左カラム: ステータス／アビリティ／スキル／所持品のショートカットを持つ",
+  ["commandStatus", "commandAbility", "commandSkills", "commandItems"].every((id) => source.includes(`id="${id}"`)));
+check("右カラム: activeView と戻るボタンを持たない", !/activeView/.test(source) && !/viewBack/.test(source));
+
+api.render();
+for (const id of ["statusBody", "abilityBody", "skillBody", "itemsBody"]) {
+  check(`右カラム: ${id} が描画される`, /\S/.test(String(elements[id].innerHTML)), "空");
+}
+check("ステータス: SP割り振りボタンを保持", /data-allocate="STR"/.test(elements.statusBody.innerHTML));
+check("ステータス: INT / MNDを効果未実装として表示", /効果未実装/.test(elements.statusBody.innerHTML));
+check("アビリティ: 未使用APを表示", /AP /.test(elements.abilityBody.innerHTML));
+check("所持品: 所持金と所持品を表示", /Gold/.test(elements.itemsBody.innerHTML) && /薬草/.test(elements.itemsBody.innerHTML));
+check("ロケーションメニュー: 街に宿屋・よろず屋・酒場がある",
+  /宿屋/.test(elements.screen.innerHTML) && /よろず屋/.test(elements.screen.innerHTML) && /酒場/.test(elements.screen.innerHTML));
+api.state.location = "cave";
+api.render();
+check("ロケーションメニュー: ダンジョンに探索・討伐・採取がある",
+  /探索/.test(elements.screen.innerHTML) && /討伐/.test(elements.screen.innerHTML) && /採取/.test(elements.screen.innerHTML));
+check("ロケーションメニュー: 討伐・採取はdisabled", /<button disabled>討伐/.test(elements.screen.innerHTML) && /<button disabled>採取/.test(elements.screen.innerHTML));
+api.state.location = "town";
+api.render();
+
 /* ---------- スタミナ ---------- */
 equal("スタミナ: 設定が1秒1回復", CONFIG.stamina.recoveryPerSecond, 1);
 check("スタミナ: 最大値の設定を持たない", CONFIG.maxStamina === undefined && CONFIG.staminaRecoveryMs === undefined);
