@@ -16,6 +16,7 @@ const EXPORTS = [
   "CONFIG", "state", "worldState", "calendarParts", "accruedStamina", "currentStamina",
   "spendStamina", "formatStamina", "migrateStaminaSpent", "explore", "load", "save", "render",
   "move", "setLocationAction", "locationAction", "defaultLocationAction",
+  "attributeTotal", "resistanceTotal", "baseDamage", "actionDamage", "simulateUtility",
 ];
 
 function loadPrototype(file, storeSeed) {
@@ -194,6 +195,64 @@ CONFIG.time.scale = scaleBefore;
 
 api.state.staminaSpent = 250;
 equal("スタミナ: 負数を返さない", api.currentStamina(open), 0);
+
+/* ---------- 属性倍率・属性耐性（Issue #67） ---------- */
+const unit = (over) => Object.assign(
+  { stats: { STR: 10, VIT: 10, DEX: 8, AGI: 8, INT: 8, MND: 10 }, weaponAtk: 0, armorDef: 0, magicAtk: 0, magicDef: 0, resistances: {} },
+  over);
+const atkUnit = unit({ weaponAtk: 11 });                                               // 物理攻撃力 = 10 + 11 = 21
+const plainDef = unit({ stats: { STR: 0, VIT: 10, DEX: 0, AGI: 8, INT: 0, MND: 3 } }); // 物理防御力 = 10
+const slash = { kind: "physical", attributes: { slash: 1 } };
+
+equal("属性: 単一属性の倍率合計", api.attributeTotal(slash), 1);
+equal("属性: 複数属性の倍率合計", api.attributeTotal({ kind: "physical", attributes: { slash: 0.7, blunt: 0.3 } }), 1);
+equal("属性: 属性未設定は0として扱う", api.attributeTotal({ kind: "physical" }), 0);
+
+equal("ダメージ: 単一属性・耐性0", api.baseDamage(atkUnit, plainDef, slash), 21 - 10);
+equal("ダメージ: 単一属性・耐性あり",
+  api.baseDamage(atkUnit, unit({ stats: plainDef.stats, resistances: { physical: { slash: 0.5 } } }), slash), 21 - 10 * 1.5);
+equal("ダメージ: 複数属性は倍率を合計する",
+  api.baseDamage(atkUnit, plainDef, { kind: "physical", attributes: { slash: 0.7, blunt: 0.7 } }), 21 * 1.4 - 10);
+equal("ダメージ: 攻撃に含まれない耐性は参照しない",
+  api.baseDamage(atkUnit, unit({ stats: plainDef.stats, resistances: { physical: { blunt: 0.5 } } }), slash), 21 - 10);
+equal("ダメージ: 対応する耐性だけを合計する",
+  api.baseDamage(atkUnit, unit({ stats: plainDef.stats, resistances: { physical: { slash: 0.5, blunt: 0.5 } } }),
+    { kind: "physical", attributes: { slash: 0.5, blunt: 0.5 } }), 21 - 10 * 2);
+equal("ダメージ: 0未満を返さない",
+  api.baseDamage(atkUnit, plainDef, { kind: "physical", attributes: { slash: 0.1 } }), 0);
+equal("ダメージ: 耐性データがなくても壊れない",
+  api.baseDamage(atkUnit, unit({ resistances: undefined }), slash), 21 - 10);
+equal("ダメージ: 魔法はINTとMNDを使う",
+  api.baseDamage(atkUnit, plainDef, { kind: "magic", attributes: { fire: 1 } }), 8 - 3);
+equal("ダメージ: 魔法も対応属性の耐性だけ参照する",
+  api.baseDamage(atkUnit, unit({ stats: plainDef.stats, resistances: { magic: { water: 1 } } }),
+    { kind: "magic", attributes: { fire: 1 } }), 8 - 3);
+
+// gapが負なら会心は発生しないため、DEX / AGI補正を決定的に確認できる
+const slowDef = unit({ stats: { STR: 0, VIT: 10, DEX: 0, AGI: 28, INT: 0, MND: 3 } });
+equal("ダメージ: DEX / AGI補正が適用される", api.actionDamage(atkUnit, slowDef, slash).damage, Math.floor((21 - 10) * 0.8));
+check("ダメージ: DEX <= AGIでは会心が発生しない", api.actionDamage(atkUnit, slowDef, slash).critical === false);
+check("ダメージ: 会心倍率とDEX / AGI除数を維持",
+  CONFIG.battle.damage.criticalMultiplier === 2 && CONFIG.battle.damage.dexAgiDivisor === 100);
+
+const allEnemies = [...CONFIG.battle.enemies, ...CONFIG.battle.eliteEnemies];
+for (const enemy of allEnemies) {
+  check(`敵データ: ${enemy.name} が属性耐性を持つ`, Boolean(enemy.resistances));
+  for (const action of enemy.actions) {
+    check(`敵データ: ${enemy.name} ${action.name} に属性がある`,
+      action.kind === "physical" && api.attributeTotal(action) > 0, JSON.stringify(action));
+    check(`敵データ: ${enemy.name} ${action.name} に旧powerが残っていない`, action.power === undefined);
+  }
+}
+for (const action of CONFIG.battle.player.actions) {
+  check(`プレイヤー行動: ${action.name} に属性がある`, api.attributeTotal(action) > 0);
+  check(`プレイヤー行動: ${action.name} に旧powerが残っていない`, action.power === undefined);
+}
+
+// Utility AIの行動選択に回帰がないこと
+equal("Utility AI: 通常時は殴打", api.simulateUtility("orc", 0.9, 0.9).action.name, "殴打");
+equal("Utility AI: 相手が低HPなら兜割り", api.simulateUtility("orc", 0.9, 0.3).action.name, "兜割り");
+equal("Utility AI: 自分が低HPなら兜割り", api.simulateUtility("orc", 0.3, 0.9).action.name, "兜割り");
 
 /* ---------- 旧セーブからの移行 ---------- */
 const now = Date.now();
