@@ -19,6 +19,7 @@ const EXPORTS = [
   "attributeTotal", "resistanceTotal", "baseDamage", "actionDamage", "simulateUtility",
   "abilityLevel", "canRaiseAbility", "raiseAbility", "actionsFor", "validTactics", "gainExp",
   "runBattle", "rest", "battleHtml",
+  "normalizeStrategy", "strategyDef", "simulatePlayerStrategy", "choosePlayerAction",
 ];
 
 function loadPrototype(file, storeSeed) {
@@ -256,7 +257,10 @@ for (const enemy of allEnemies) {
   }
 }
 for (const action of CONFIG.battle.player.actions) {
-  check(`プレイヤー行動: ${action.name} に属性がある`, api.attributeTotal(action) > 0);
+  // 回復行動（Issue #74の検証用）はダメージ計算を通さないため属性を持たない
+  const label = Number.isFinite(action.heal) ? "に回復量がある" : "に属性がある";
+  check(`プレイヤー行動: ${action.name} ${label}`,
+    Number.isFinite(action.heal) ? action.heal > 0 : api.attributeTotal(action) > 0);
   check(`プレイヤー行動: ${action.name} に旧powerが残っていない`, action.power === undefined);
 }
 
@@ -265,8 +269,12 @@ const abilityDefs = CONFIG.battle.abilities.list;
 equal("Ability: Prototypeでは1種のみ", abilityDefs.length, 1);
 const ability = abilityDefs[0];
 equal("Ability: 新規stateはLv0", api.abilityLevel(ability.id), 0);
-equal("Ability: 未習得時の利用可能行動は通常攻撃のみ", api.actionsFor(api.state.abilities).map((a) => a.id).join(","), "attack");
-equal("Ability: 未習得時の初期戦術は通常攻撃100%", JSON.stringify(api.state.tactics), JSON.stringify({ attack: 100 }));
+// 強打は未習得。応急手当はIssue #74の検証用行動で習得不要のため常に利用できる
+equal("Ability: 未習得時は強打を利用可能行動に含めない",
+  api.actionsFor(api.state.abilities).map((a) => a.id).join(","), "attack,firstAid");
+const freshState = loadPrototype(file, {});
+equal("Ability: 未習得時の初期戦術に強打を含めない",
+  JSON.stringify(freshState.api.state.tactics), JSON.stringify({ attack: 75, firstAid: 25 }));
 
 // AP不足では上げられない
 api.state.skillPoints = 0;
@@ -281,8 +289,9 @@ api.raiseAbility(ability.id);
 equal("Ability: AP1消費でLv+1", api.abilityLevel(ability.id), 1);
 equal("Ability: APが1減る", api.state.skillPoints, 1);
 equal("Skill: Lv1で強打を習得扱いにする",
-  api.actionsFor(api.state.abilities).map((a) => a.id).join(","), "attack,skill");
-equal("Skill: 習得後の初期戦術は通常攻撃60 / 強打40", JSON.stringify(api.state.tactics), JSON.stringify({ attack: 60, skill: 40 }));
+  api.actionsFor(api.state.abilities).map((a) => a.id).join(","), "attack,skill,firstAid");
+equal("Skill: 習得後の初期戦術は通常攻撃60 / 強打20 / 応急手当20",
+  JSON.stringify(api.state.tactics), JSON.stringify({ attack: 60, skill: 20, firstAid: 20 }));
 check("Skill: 習得後の戦術合計が100", Object.values(api.state.tactics).reduce((a, b) => a + b, 0) === 100);
 check("Skill: 習得後の戦術設定が妥当", api.validTactics(api.state.tactics, api.state.abilities) === true);
 
@@ -309,7 +318,7 @@ equal("Ability: localStorageへ保存される", savedAbility[ability.id], 1);
 const reloadedAbility = loadPrototype(file, store);
 equal("Ability: 再読込後もLvを維持", reloadedAbility.api.abilityLevel(ability.id), 1);
 equal("Skill: 再読込後も習得状態を維持",
-  reloadedAbility.api.actionsFor(reloadedAbility.api.state.abilities).map((a) => a.id).join(","), "attack,skill");
+  reloadedAbility.api.actionsFor(reloadedAbility.api.state.abilities).map((a) => a.id).join(","), "attack,skill,firstAid");
 
 // 旧セーブ互換: Ability情報がなく、旧tacticsに強打比率が残っている場合
 const legacyAbility = loadPrototype(file, {
@@ -320,9 +329,9 @@ const legacyAbility = loadPrototype(file, {
 });
 equal("旧セーブ: AbilityデータがなくてもLv0で読み込む", legacyAbility.api.abilityLevel(ability.id), 0);
 equal("旧セーブ: 未習得なら強打を戦術設定へ出さない",
-  JSON.stringify(legacyAbility.api.state.tactics), JSON.stringify({ attack: 100 }));
+  JSON.stringify(legacyAbility.api.state.tactics), JSON.stringify({ attack: 75, firstAid: 25 }));
 equal("旧セーブ: 未習得なら強打を利用可能行動に含めない",
-  legacyAbility.api.actionsFor(legacyAbility.api.state.abilities).map((a) => a.id).join(","), "attack");
+  legacyAbility.api.actionsFor(legacyAbility.api.state.abilities).map((a) => a.id).join(","), "attack,firstAid");
 equal("旧セーブ: Gold / Lv / SP / AP / HP / statsを保持",
   [legacyAbility.api.state.gold, legacyAbility.api.state.level, legacyAbility.api.state.parameterPoints,
    legacyAbility.api.state.skillPoints, legacyAbility.api.state.currentHp, legacyAbility.api.state.stats.STR].join(","),
@@ -379,11 +388,13 @@ equal("MP: 戦闘終了後も残MPを保持", mpBattle1.playerMp, 10);
 const mpBattle2 = api.runBattle([mpDummy]);
 equal("MP: 次戦へ残MPを持ち越す", mpBattle2.turns[0].playerMp, 0);
 const mpBattle3 = api.runBattle([mpDummy]);
-equal("MP: 不足時は通常攻撃へfallback", mpBattle3.turns[0].playerAction, "通常攻撃");
-equal("MP: fallback理由はMP不足", mpBattle3.turns[0].fallbackReason, "mp");
+// Issue #74で候補除外方式へ移行したため、抽選後のfallbackではなくUtility評価前に除外される
+equal("MP: 不足時はMPコスト行動を候補から除外し通常攻撃を選ぶ", mpBattle3.turns[0].playerAction, "通常攻撃");
+equal("MP: 除外理由はMP不足",
+  (mpBattle3.turns[0].excluded || []).find((entry) => entry.id === "skill")?.reason, "mp");
 equal("MP: 不足時も負数にならない", api.state.currentMp, 0);
 const mpLog = api.battleHtml(mpBattle3);
-check("MP: 戦闘ログでfallbackと残MPを確認できる", /MP不足/.test(mpLog) && /残MP/.test(mpLog), mpLog);
+check("MP: 戦闘ログで候補除外と残MPを確認できる", /MP不足/.test(mpLog) && /残MP/.test(mpLog), mpLog);
 const legacyBattleLog = api.battleHtml({
   enemyName: "旧敵", enemyMaxHp: 10, result: "victory", playerHp: 5, enemyHp: 0,
   turns: [{ turn: 1, playerAction: "通常攻撃", playerDamage: 10, playerCritical: false,
@@ -403,6 +414,99 @@ api.state.currentMp = 13;
 api.save();
 equal("MP: currentMpをlocalStorageへ保存", JSON.parse(store[CONFIG.storageKey]).currentMp, 13);
 api.state.currentMp = CONFIG.battle.player.maxMp;
+
+/* ---------- プレイヤー作戦型Utility AI（Issue #74） ---------- */
+const strategies = CONFIG.battle.strategies;
+equal("作戦: Prototypeでは3種", strategies.list.map((entry) => entry.id).join(","), "balanced,offensive,defensive");
+equal("作戦: 新規stateは既定の作戦", freshState.api.state.strategy, strategies.default);
+equal("作戦: 未知IDは既定の作戦へ落とす", api.normalizeStrategy("unknown"), strategies.default);
+equal("作戦: 旧セーブに作戦がなくても既定の作戦で読み込む", legacyAbility.api.state.strategy, strategies.default);
+
+// 同一戦況・同一基礎優先度で作戦だけ変えて比較する。randomBandを0にして決定論で確認する
+const ai = loadPrototype(file, {});
+ai.api.CONFIG.battle.strategies.randomBand = 0;
+ai.api.state.abilities = { slashTraining: 1 };
+ai.api.state.tactics = { attack: 60, skill: 20, firstAid: 20 };
+const pick = (id, situation) => ai.api.simulatePlayerStrategy(id, situation).action.name;
+
+// HP満タン・MP満タン：攻撃重視だけがMP消費スキルを選ぶ
+const healthy = { selfHpRatio: 1, selfMpRatio: 1, enemyHpRatio: 1 };
+equal("作戦: バランスは通常攻撃", pick("balanced", healthy), "通常攻撃");
+equal("作戦: 攻撃重視は強打", pick("offensive", healthy), "強打");
+equal("作戦: 生存重視は通常攻撃", pick("defensive", healthy), "通常攻撃");
+
+// HP75%：生存重視だけが回復へ切り替わる
+const grazed = { selfHpRatio: 0.75, selfMpRatio: 1, enemyHpRatio: 1 };
+equal("作戦: HP75%でバランスはまだ攻撃", pick("balanced", grazed), "通常攻撃");
+equal("作戦: HP75%で攻撃重視は攻撃を続ける", pick("offensive", grazed), "強打");
+equal("作戦: HP75%で生存重視は回復", pick("defensive", grazed), "応急手当");
+
+// HP30%：危険域ではバランスも回復するが、攻撃重視は攻撃を続ける
+const danger = { selfHpRatio: 0.3, selfMpRatio: 1, enemyHpRatio: 1 };
+equal("作戦: HP30%でバランスは回復", pick("balanced", danger), "応急手当");
+equal("作戦: HP30%で攻撃重視は攻撃を続ける", pick("offensive", danger), "強打");
+equal("作戦: HP30%で生存重視は回復", pick("defensive", danger), "応急手当");
+
+// MP残量20%：作戦によってMPの使い方が変わる
+const lowMp = { selfHpRatio: 1, selfMpRatio: 0.2, enemyHpRatio: 1 };
+equal("作戦: MP20%で攻撃重視はMPを使う", pick("offensive", lowMp), "強打");
+equal("作戦: MP20%でバランスはMPを温存", pick("balanced", lowMp), "通常攻撃");
+equal("作戦: MP20%で生存重視はMPを温存", pick("defensive", lowMp), "通常攻撃");
+equal("作戦: 生存重視は温存したMPをHP低下時の回復へ回す",
+  pick("defensive", { selfHpRatio: 0.4, selfMpRatio: 0.3, enemyHpRatio: 1 }), "応急手当");
+
+// 候補除外（Issue #74 §3.1）
+const excludedIds = (id, situation) =>
+  ai.api.simulatePlayerStrategy(id, situation).excluded.map((entry) => `${entry.id}:${entry.reason}`).join(",");
+equal("候補除外: HP満タンでは回復行動を除外", excludedIds("balanced", healthy), "firstAid:full");
+equal("候補除外: MP不足のスキルを除外",
+  excludedIds("offensive", { selfHpRatio: 0.5, selfMpRatio: 0, enemyHpRatio: 1 }), "skill:mp,firstAid:mp");
+equal("候補除外: 使用回数上限に達したスキルを除外",
+  excludedIds("offensive", { ...healthy, usesByAction: { skill: 0 } }), "skill:uses,firstAid:full");
+equal("候補除外: 除外されても通常攻撃は必ず残る",
+  pick("offensive", { selfHpRatio: 1, selfMpRatio: 0, enemyHpRatio: 1 }), "通常攻撃");
+equal("候補除外: 未習得の強打は候補に現れない",
+  ai.api.simulatePlayerStrategy("offensive", { ...healthy, abilities: { slashTraining: 0 } })
+    .scores.map((score) => score.id).join(","), "attack");
+
+// ランダム性：randomBandが0なら決定論、正なら近いScoreの上位候補間で割れる
+const repeat = (times, fn) => new Set(Array.from({ length: times }, fn));
+ai.api.CONFIG.battle.strategies.randomBand = 0;
+equal("ランダム性: randomBand0では選択が揺れない", repeat(40, () => pick("balanced", healthy)).size, 1);
+ai.api.state.tactics = { attack: 40, skill: 25, firstAid: 35 };   // 通常攻撃と強打のScoreを接近させる
+ai.api.CONFIG.battle.strategies.randomBand = 10;
+check("ランダム性: 近いScoreの上位候補間では選択が割れる",
+  repeat(80, () => pick("balanced", healthy)).size > 1);
+ai.api.CONFIG.battle.strategies.randomBand = strategies.randomBand;
+ai.api.state.tactics = { attack: 60, skill: 20, firstAid: 20 };
+
+// 回復行動の実処理
+const healDummy = {
+  id: "heal-dummy", name: "作戦検証用", probability: 1, maxHp: 999, exp: 0, material: null,
+  stats: { STR: 0, VIT: 0, DEX: 0, AGI: 0, INT: 0, MND: 0 },
+  actions: [{ name: "様子見", probability: 1, kind: "physical", attributes: { blunt: 0 } }], resistances: {},
+};
+const firstAid = CONFIG.battle.player.actions.find((action) => action.id === "firstAid");
+equal("回復行動: 習得条件を持たない", firstAid.requires, undefined);
+ai.api.CONFIG.battle.strategies.randomBand = 0;
+ai.api.state.strategy = "defensive";
+ai.api.state.currentHp = 40;
+ai.api.state.currentMp = CONFIG.battle.player.maxMp;
+const healBattle = ai.api.runBattle([healDummy]);
+equal("回復行動: 生存重視の初手は応急手当", healBattle.turns[0].playerAction, "応急手当");
+equal("回復行動: HPが回復量ぶん回復する", healBattle.turns[0].healed, firstAid.heal);
+equal("回復行動: MPを消費する", healBattle.turns[0].mpSpent, firstAid.mpCost);
+equal("回復行動: ダメージを与えない", healBattle.turns[0].playerDamage, 0);
+check("回復行動: 最大HPを超えない",
+  healBattle.turns.every((turn) => turn.playerHp <= CONFIG.battle.player.maxHp));
+check("回復行動: 戦闘ログへ回復量を表示", /HPが\d+回復/.test(ai.api.battleHtml(healBattle)));
+check("回復行動: 戦闘ログへ作戦を表示", /作戦：生存重視/.test(ai.api.battleHtml(healBattle)));
+
+// 保存と再読込
+ai.api.state.strategy = "offensive";
+ai.api.save();
+equal("作戦: localStorageへ保存される", JSON.parse(ai.store[CONFIG.storageKey]).strategy, "offensive");
+equal("作戦: 再読込後も維持される", loadPrototype(file, ai.store).api.state.strategy, "offensive");
 
 // Utility AIの行動選択に回帰がないこと
 equal("Utility AI: 通常時は殴打", api.simulateUtility("orc", 0.9, 0.9).action.name, "殴打");
