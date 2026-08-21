@@ -20,6 +20,9 @@ const EXPORTS = [
   "abilityLevel", "canRaiseAbility", "raiseAbility", "actionsFor", "validTactics", "gainExp",
   "runBattle", "rest", "battleHtml",
   "normalizeStrategy", "strategyDef", "simulatePlayerStrategy", "choosePlayerAction",
+  "initialWorld", "normalizeWorld", "saveWorld", "addWorldProgress", "applyWorldUnlocks",
+  "unlockLocation", "unlockBoss", "defeatBoss", "challengeBoss", "worldQuest",
+  "locationDef", "locationUnlocked", "locationProgress", "locationComplete",
 ];
 
 function loadPrototype(file, storeSeed) {
@@ -164,18 +167,18 @@ check("現在地の行動: よろず屋へ切り替わる", api.locationAction =
 check("現在地の行動: 素材換金と装備を表示する",
   /Gold\/個/.test(elements.screen.innerHTML) && /装備の購入・変更/.test(elements.screen.innerHTML));
 check("現在地の行動: よろず屋選択時に宿屋の内容を出さない", !/宿屋で休む/.test(elements.screen.innerHTML));
-check("現在地の行動: 街の本文に重複した移動ボタンがない", !/始まりの洞窟へ/.test(elements.screen.innerHTML));
+check("現在地の行動: 街の本文に重複した移動ボタンがない", !/アルンの森へ/.test(elements.screen.innerHTML));
 
-api.move("cave");
-check("ロケーション移動: 現在地が更新される", api.state.location === "cave");
+api.move("forest");
+check("ロケーション移動: 現在地が更新される", api.state.location === "forest");
 check("ロケーション移動: ダンジョンの初期選択は探索", api.locationAction === "explore", api.locationAction);
 check("現在地の行動: 探索の内容を表示する", /探索開始/.test(elements.screen.innerHTML));
-check("現在地の行動: 洞窟の本文に重複した移動ボタンがない", !/街へ戻る/.test(elements.screen.innerHTML));
+check("現在地の行動: ダンジョンの本文に重複した移動ボタンがない", !/街へ戻る/.test(elements.screen.innerHTML));
 api.move("town");
 check("ロケーション移動: 街へ戻ると初期選択が宿屋へ戻る",
   api.state.location === "town" && api.locationAction === "inn", api.locationAction);
 
-api.state.location = "cave";
+api.state.location = "forest";
 api.render();
 check("ロケーションメニュー: ダンジョンに探索・討伐・採取がある",
   /探索/.test(elements.screen.innerHTML) && /討伐/.test(elements.screen.innerHTML) && /採取/.test(elements.screen.innerHTML));
@@ -402,7 +405,7 @@ const legacyBattleLog = api.battleHtml({
 });
 check("MP: 旧戦闘履歴にundefinedを表示しない", !/undefined/.test(legacyBattleLog), legacyBattleLog);
 
-api.state.location = "cave";
+api.state.location = "forest";
 api.state.currentHp = 1;
 api.state.currentMp = 0;
 api.move("town");
@@ -563,6 +566,178 @@ equal("Utility AI: 通常時は殴打", api.simulateUtility("orc", 0.9, 0.9).act
 equal("Utility AI: 相手が低HPなら兜割り", api.simulateUtility("orc", 0.9, 0.3).action.name, "兜割り");
 equal("Utility AI: 自分が低HPなら兜割り", api.simulateUtility("orc", 0.3, 0.9).action.name, "兜割り");
 
+/* ---------- 第1層ロケーション進行（Issue #76） ---------- */
+const layer1 = loadPrototype(file, {});
+const w = () => layer1.api.worldState;
+const maxHp = CONFIG.battle.player.maxHp;
+// 探索を1回まわす。HPを満タンへ戻してから呼び、スタミナが実際に消費されたことを成立条件にする
+// （履歴は historyLimit で頭打ちになるため、実行判定には使わない）
+function runExplore(instance) {
+  instance.api.state.currentHp = maxHp;
+  instance.api.state.currentMp = CONFIG.battle.player.maxMp;
+  const before = instance.api.state.staminaSpent;
+  instance.api.explore(10);
+  return instance.api.state.staminaSpent === before + 10;
+}
+// トラップ・進行なし等の踏破率0イベントを引くことがあるため、増加するまで数回まわす
+function exploreUntilProgress(instance, locationId, attempts = 15) {
+  for (let i = 0; i < attempts; i += 1) {
+    const before = instance.api.locationProgress(locationId);
+    if (!runExplore(instance)) return false;
+    if (instance.api.locationProgress(locationId) > before) return true;
+  }
+  return false;
+}
+
+equal("第1層: ロケーションは街・森・巣穴の3種",
+  CONFIG.locations.list.map((def) => `${def.id}:${def.name}`).join(","),
+  "town:アルマセント,forest:アルンの森,den:ゴブリンの巣穴");
+check("第1層: 新規stateでアルンの森はunlocked", w().locations.forest.unlocked === true);
+check("第1層: 新規stateでゴブリンの巣穴はlocked", w().locations.den.unlocked === false);
+equal("第1層: 新規stateの踏破率はロケーション別に0",
+  `${w().locations.forest.progress},${w().locations.den.progress}`, "0,0");
+equal("第1層: 開始クエストはアルンの森の調査", layer1.api.worldQuest().title, "アルンの森を調査せよ");
+check("第1層: 新規stateでボスも第2層も未解放",
+  w().bosses.goblinWarlord.unlocked === false && w().bosses.goblinWarlord.defeated === false
+  && w().layers.layer2Unlocked === false);
+
+// lockedロケーションへは移動できない
+layer1.api.move("den");
+equal("第1層: lockedロケーションへ移動できない", layer1.api.state.location, "town");
+check("第1層: 街では探索できない", runExplore(layer1) === false);
+
+// 森で探索すると森の踏破率だけが進む
+layer1.api.move("forest");
+equal("第1層: 解放済みの森へは移動できる", layer1.api.state.location, "forest");
+check("第1層: 森で探索すると森の踏破率が進む", exploreUntilProgress(layer1, "forest"));
+check("第1層: 森の探索では巣穴の踏破率が進まない",
+  w().locations.den.progress === 0, JSON.stringify(w().locations));
+check("第1層: 個人の探索深度もロケーション別に進む",
+  layer1.api.state.explorationDepth.forest >= 0 && layer1.api.state.explorationDepth.den === 0,
+  JSON.stringify(layer1.api.state.explorationDepth));
+
+// 森100%でゴブリンの巣穴を1回だけ解放する
+layer1.api.addWorldProgress("forest", 100);
+equal("第1層: 森の踏破率は100%で頭打ち", w().locations.forest.progress, 100);
+check("第1層: 森100%で巣穴が解放される",
+  layer1.api.unlockLocation("den") === true && w().locations.den.unlocked === true);
+check("第1層: 巣穴の解放は1回だけ発火する", layer1.api.unlockLocation("den") === false);
+equal("第1層: 巣穴解放でクエストが進む", layer1.api.worldQuest().title, "ゴブリンを掃討せよ");
+equal("第1層: 巣穴解放時のStepは巣穴調査", w().quest.step, "denSurvey");
+check("第1層: 前のクエストを完了扱いにする", w().quest.completed.includes("forestSurvey"));
+
+// 100%到達後も探索を継続できる
+check("第1層: 森100%後も森を探索できる", runExplore(layer1));
+equal("第1層: 100%到達後は森の踏破率が増えない", w().locations.forest.progress, 100);
+
+// 巣穴100%でゴブリン・ウォーロードを1回だけ解放する
+layer1.api.move("den");
+equal("第1層: 解放後は巣穴へ移動できる", layer1.api.state.location, "den");
+check("第1層: 巣穴で探索すると巣穴の踏破率が進む", exploreUntilProgress(layer1, "den"));
+check("第1層: 巣穴の探索では森の踏破率が変わらない",
+  w().locations.forest.progress === 100, JSON.stringify(w().locations));
+layer1.api.addWorldProgress("den", 100);
+check("第1層: 巣穴100%でボスが解放される",
+  layer1.api.unlockBoss("goblinWarlord") === true && w().bosses.goblinWarlord.unlocked === true);
+check("第1層: ボスの解放は1回だけ発火する", layer1.api.unlockBoss("goblinWarlord") === false);
+equal("第1層: ボス解放でStepが討伐へ進む", w().quest.step, "warlord");
+check("第1層: 巣穴100%後も巣穴を探索できる", runExplore(layer1));
+equal("第1層: 100%到達後は巣穴の踏破率が増えない", w().locations.den.progress, 100);
+
+// ボス未解放では撃破できない
+const freshBoss = loadPrototype(file, {});
+check("第1層: ボス未解放時は撃破処理できない",
+  freshBoss.api.defeatBoss("goblinWarlord") === false
+  && freshBoss.api.worldState.bosses.goblinWarlord.defeated === false
+  && freshBoss.api.worldState.layers.layer2Unlocked === false);
+
+// 撃破 → 第2層解放 → 重複しない
+check("第1層: ボス撃破でdefeatedになる",
+  layer1.api.defeatBoss("goblinWarlord") === true && w().bosses.goblinWarlord.defeated === true);
+check("第1層: 初回撃破で第2層が解放される", w().layers.layer2Unlocked === true);
+check("第1層: 撃破でクエストが完了する",
+  w().quest.current === null && w().quest.completed.includes("goblinCleanup"));
+equal("第1層: 完了後のクエスト表示", layer1.api.worldQuest().title, CONFIG.world.completedTitle);
+const worldSnapshot = JSON.stringify(w());
+check("第1層: 再度撃破しても進行が重複しない",
+  layer1.api.defeatBoss("goblinWarlord") === false && JSON.stringify(w()) === worldSnapshot);
+
+// 保存と再読込
+layer1.api.saveWorld();
+const reloadedWorld = loadPrototype(file, layer1.store).api.worldState;
+equal("第1層: 再読込後も進行状態を維持する",
+  JSON.stringify({ forest: reloadedWorld.locations.forest, den: reloadedWorld.locations.den,
+    boss: reloadedWorld.bosses.goblinWarlord, layer2: reloadedWorld.layers.layer2Unlocked,
+    quest: reloadedWorld.quest.current }),
+  JSON.stringify({ forest: { unlocked: true, progress: 100 }, den: { unlocked: true, progress: 100 },
+    boss: { unlocked: true, defeated: true }, layer2: true, quest: null }));
+
+// UI導線
+const lockedUi = loadPrototype(file, {});
+lockedUi.api.render();
+check("第1層UI: 3ロケーションの移動ボタンを表示する",
+  ["town", "forest", "den"].every((id) => lockedUi.elements.locationButtons.innerHTML.includes(`data-location="${id}"`)),
+  lockedUi.elements.locationButtons.innerHTML);
+check("第1層UI: 未解放の巣穴はdisabledで表示する",
+  /data-location="den"[^>]*disabled/.test(lockedUi.elements.locationButtons.innerHTML),
+  lockedUi.elements.locationButtons.innerHTML);
+check("第1層UI: 未解放の巣穴に解放条件を示す",
+  /アルンの森 踏破率100%で解放/.test(lockedUi.elements.locationButtons.innerHTML));
+lockedUi.api.state.location = "forest";
+lockedUi.api.render();
+check("第1層UI: ダンジョンでは現在地の踏破率を表示する",
+  lockedUi.elements.location.textContent === "アルンの森" && lockedUi.elements.clearRateBox.hidden === false);
+lockedUi.api.state.location = "town";
+lockedUi.api.render();
+check("第1層UI: 街では踏破率を表示しない", lockedUi.elements.clearRateBox.hidden === true);
+
+layer1.api.render();
+check("第1層UI: 撃破済みのボスを討伐済みとして表示する",
+  /ゴブリン・ウォーロードは討伐済みです/.test(layer1.elements.screen.innerHTML));
+check("第1層UI: 第2層の解放を表示する",
+  /第2層が解放されました/.test(layer1.elements.screen.innerHTML), layer1.elements.screen.innerHTML);
+
+// 検証用撃破ボタンの導線
+const bossFlow = loadPrototype(file, {});
+bossFlow.api.addWorldProgress("forest", 100);
+bossFlow.api.applyWorldUnlocks();
+bossFlow.api.state.location = "den";
+bossFlow.api.render();
+check("第1層UI: ボス未解放時は解放条件を示す",
+  /踏破率が100%に到達すると、ゴブリン・ウォーロードが解放されます/.test(bossFlow.elements.screen.innerHTML),
+  bossFlow.elements.screen.innerHTML);
+bossFlow.api.addWorldProgress("den", 100);
+bossFlow.api.applyWorldUnlocks();
+check("第1層: 解放判定をまとめて実行しても順に発火する",
+  bossFlow.api.worldState.locations.den.unlocked === true
+  && bossFlow.api.worldState.bosses.goblinWarlord.unlocked === true);
+bossFlow.api.state.location = "den";
+bossFlow.api.render();
+check("第1層UI: 未撃破時は検証用撃破ボタンを表示する",
+  /data-boss="goblinWarlord"/.test(bossFlow.elements.screen.innerHTML));
+bossFlow.api.challengeBoss("goblinWarlord");
+check("第1層: 検証用撃破で第2層まで解放される",
+  bossFlow.api.worldState.bosses.goblinWarlord.defeated === true
+  && bossFlow.api.worldState.layers.layer2Unlocked === true);
+
+// 旧形式の世界進行は破棄して初期化する（Issue #76 §9）
+const legacyWorld = loadPrototype(file, {
+  [CONFIG.worldStorageKey]: JSON.stringify({ progress: 100, step: "bossFound", bossUnlocked: true }),
+  [CONFIG.storageKey]: JSON.stringify({ gold: 777, level: 4, location: "cave", explorationDepth: 55 }),
+});
+check("旧セーブ: 旧形式の世界進行を破棄して初期化する",
+  legacyWorld.api.worldState.locations.forest.progress === 0
+  && legacyWorld.api.worldState.locations.den.unlocked === false
+  && legacyWorld.api.worldState.bosses.goblinWarlord.unlocked === false
+  && legacyWorld.api.worldState.layers.layer2Unlocked === false,
+  JSON.stringify(legacyWorld.api.worldState));
+equal("旧セーブ: 世界進行を初期化してもGoldは保持する", legacyWorld.api.state.gold, 777);
+equal("旧セーブ: 世界進行を初期化してもLvは保持する", legacyWorld.api.state.level, 4);
+equal("旧セーブ: 旧locationは街へ落とす", legacyWorld.api.state.location, "town");
+check("旧セーブ: 初期化した旨をログへ残す",
+  legacyWorld.api.state.systemLog.some((entry) => /旧形式の世界進行/.test(entry.message)),
+  JSON.stringify(legacyWorld.api.state.systemLog));
+
 /* ---------- 旧セーブからの移行 ---------- */
 const now = Date.now();
 const legacy = {
@@ -584,8 +759,10 @@ equal("移行: HPを保持", ms.currentHp, 77);
 equal("移行: MPがない旧セーブは最大MPで初期化", ms.currentMp, CONFIG.battle.player.maxMp);
 equal("移行: 所持品を保持", ms.items["薬草"], 4);
 equal("移行: 装備を保持", ms.equippedWeapon, "ironDagger");
-equal("移行: locationを保持", ms.location, "cave");
-equal("移行: 探索深度を保持", ms.explorationDepth, 61);
+// Issue #76でロケーションが分割されたため、旧「始まりの洞窟」の現在地と探索深度は引き継がない
+equal("移行: 旧locationは街へ正規化する", ms.location, "town");
+equal("移行: 旧探索深度は引き継がずロケーション別に0で初期化する",
+  JSON.stringify(ms.explorationDepth), JSON.stringify({ forest: 0, den: 0 }));
 equal("移行: 探索履歴を保持", ms.history.length, 1);
 equal("移行: システムログを保持", ms.systemLog.length, 1);
 check("移行: 累計使用スタミナが負数にならない", ms.staminaSpent >= 0, `spent=${ms.staminaSpent}`);
