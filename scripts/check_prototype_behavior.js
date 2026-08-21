@@ -24,6 +24,7 @@ const EXPORTS = [
   "unlockLocation", "unlockBoss", "defeatBoss", "challengeBoss", "worldQuest",
   "locationDef", "locationUnlocked", "locationProgress", "locationComplete",
   "locationContent", "encounterPool", "enemyDef", "eventText",
+  "debug", "debugBattle", "debugRestore", "summaryText", "writeBattleTurns",
 ];
 
 function loadPrototype(file, storeSeed) {
@@ -833,6 +834,89 @@ check("ロケーション別: 森の探索で森固有の成果を得られる",
   forestOnly.some((item) => forestItems.includes(item)), forestItems.join(","));
 check("ロケーション別: 巣穴の探索で巣穴固有の素材を得られる",
   denOnly.some((item) => denItems.includes(item)), denItems.join(","));
+
+/* ---------- 強敵直接テストと継戦性サマリー（Issue #80） ---------- */
+const dbg = loadPrototype(file, {});
+dbg.api.state.gold = 100;
+dbg.api.state.items = { "薬草": 1 };
+dbg.api.state.staminaSpent = 40;
+dbg.api.state.explorationDepth.forest = 12;
+dbg.api.addWorldProgress("forest", 20);
+dbg.api.debug("restore");
+equal("デバッグ: HP全回復", dbg.api.state.currentHp, maxHp);
+equal("デバッグ: MP全回復", dbg.api.state.currentMp, CONFIG.battle.player.maxMp);
+
+// 直接戦闘は進行・報酬・成長へ影響しない
+const untouched = (instance) => JSON.stringify({
+  gold: instance.api.state.gold, exp: instance.api.state.exp, level: instance.api.state.level,
+  parameterPoints: instance.api.state.parameterPoints, skillPoints: instance.api.state.skillPoints,
+  items: instance.api.state.items, staminaSpent: instance.api.state.staminaSpent,
+  explorationDepth: instance.api.state.explorationDepth, history: instance.api.state.history.length,
+  world: instance.api.worldState,
+});
+const beforeDebugBattle = untouched(dbg);
+const debugResult = dbg.api.debugBattle("alphaWolf");
+check("デバッグ戦闘: 強敵と直接戦闘できる",
+  debugResult !== null && debugResult.enemyName === "アルファウルフ" && debugResult.turns.length > 0);
+check("デバッグ戦闘: 通常戦闘と同じ勝敗判定を返す", ["victory", "defeat"].includes(debugResult.result));
+equal("デバッグ戦闘: スタミナ・踏破率・深度・EXP・Gold・素材／アイテム・クエストが変化しない",
+  untouched(dbg), beforeDebugBattle);
+check("デバッグ戦闘: HP / MPは戦闘結果として変化しうる",
+  dbg.api.state.currentHp <= maxHp && dbg.api.state.currentMp <= CONFIG.battle.player.maxMp);
+check("デバッグ戦闘: 結果と非接続である旨をログへ残す",
+  dbg.api.state.systemLog.some((entry) => /デバッグ戦闘結果/.test(entry.message))
+  && dbg.api.state.systemLog.some((entry) => /スタミナ・踏破率・探索深度・EXP・Gold・素材／アイテムは変化しない/.test(entry.message)));
+
+// 洞窟オークも同じ導線で確認できる。未知IDと戦闘不能状態では実行しない
+dbg.api.debug("restore");
+check("デバッグ戦闘: 洞窟オークとも直接戦闘できる", dbg.api.debugBattle("orc")?.enemyName === "洞窟オーク");
+equal("デバッグ戦闘: 未知の敵IDでは戦闘しない", dbg.api.debugBattle("unknownEnemy"), null);
+dbg.api.state.currentHp = 0;
+const beforeHp0 = untouched(dbg);
+equal("デバッグ戦闘: HP0では戦闘しない", dbg.api.debugBattle("alphaWolf"), null);
+equal("デバッグ戦闘: HP0で実行しても状態が変わらない", untouched(dbg), beforeHp0);
+check("デバッグ戦闘: HP0の理由をログへ残す",
+  dbg.api.state.systemLog.some((entry) => /HPが0のため戦闘できない/.test(entry.message)));
+
+// 継戦性サマリー
+const endurance = loadPrototype(file, {});
+endurance.api.state.location = "forest";
+endurance.api.debug("restore");
+const startHp = endurance.api.state.currentHp;
+const startMp = endurance.api.state.currentMp;
+endurance.api.explore(30);
+const summary = endurance.api.state.lastResult.summary;
+check("サマリー: 探索結果へ継戦性サマリーが残る", Boolean(summary), JSON.stringify(endurance.api.state.lastResult));
+equal("サマリー: 投入スタミナ", summary.cost, 30);
+equal("サマリー: 予定イベント数", summary.plannedEvents, 3);
+check("サマリー: 実際に処理したイベント数は予定以下", summary.events > 0 && summary.events <= summary.plannedEvents,
+  JSON.stringify(summary));
+equal("サマリー: 勝敗数の合計が戦闘回数と一致", summary.victories + summary.defeats, summary.battles);
+equal("サマリー: 戦闘回数が探索イベントと一致",
+  summary.battles, endurance.api.state.lastResult.events.filter((event) => event.battle).length);
+equal("サマリー: 探索開始時のHP / MP", `${summary.startHp},${summary.startMp}`, `${startHp},${startMp}`);
+equal("サマリー: 探索終了時のHP / MP",
+  `${summary.endHp},${summary.endMp}`, `${endurance.api.state.currentHp},${endurance.api.state.currentMp}`);
+equal("サマリー: HP0中断の有無と処理イベント数が整合する",
+  summary.interrupted, summary.endHp <= 0 && summary.events < summary.plannedEvents);
+check("サマリー: システムログへサマリー行を出す",
+  endurance.api.state.systemLog.some((entry) => /探索サマリー：/.test(entry.message)),
+  JSON.stringify(endurance.api.state.systemLog.slice(0, 3)));
+endurance.api.render();
+check("サマリー: 探索結果パネルへ継戦性サマリーを表示する",
+  /継戦性サマリー/.test(endurance.elements.screen.innerHTML), endurance.elements.screen.innerHTML.slice(0, 400));
+
+// 旧セーブ（summaryなし）の履歴・結果表示でも落ちない
+const legacyResult = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({
+    gold: 10, location: "forest",
+    history: [{ cost: 10, location: "forest", locationName: "アルンの森", events: [], worldBefore: 0, worldAfter: 4, worldTotal: 4 }],
+  }),
+});
+legacyResult.api.render();
+check("サマリー: summaryのない旧履歴でも描画できる",
+  legacyResult.elements.history.innerHTML.includes("アルンの森")
+  && /継戦性サマリー/.test(legacyResult.elements.history.innerHTML) === false);
 
 /* ---------- 旧セーブからの移行 ---------- */
 const now = Date.now();
