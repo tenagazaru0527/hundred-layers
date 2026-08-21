@@ -23,6 +23,7 @@ const EXPORTS = [
   "initialWorld", "normalizeWorld", "saveWorld", "addWorldProgress", "applyWorldUnlocks",
   "unlockLocation", "unlockBoss", "defeatBoss", "challengeBoss", "worldQuest",
   "locationDef", "locationUnlocked", "locationProgress", "locationComplete",
+  "locationContent", "encounterPool", "enemyDef", "eventText",
 ];
 
 function loadPrototype(file, storeSeed) {
@@ -737,6 +738,101 @@ equal("旧セーブ: 旧locationは街へ落とす", legacyWorld.api.state.locat
 check("旧セーブ: 初期化した旨をログへ残す",
   legacyWorld.api.state.systemLog.some((entry) => /旧形式の世界進行/.test(entry.message)),
   JSON.stringify(legacyWorld.api.state.systemLog));
+
+/* ---------- ロケーション別コンテンツ（Issue #78） ---------- */
+const contentIds = ["forest", "den"];
+const sum = (list) => list.reduce((total, entry) => total + entry.probability, 0);
+for (const id of contentIds) {
+  const content = CONFIG.locations.content[id];
+  const name = CONFIG.locations.list.find((def) => def.id === id).name;
+  check(`ロケーション別: ${name} に通常敵・強敵・探索イベント・報酬がある`,
+    Boolean(content?.normalEnemies?.length && content?.eliteEnemies?.length
+      && content?.explorationEvents?.length && content?.rewards?.itemDrops?.length));
+  check(`ロケーション別: ${name} の通常敵の出現率合計が1`, Math.abs(sum(content.normalEnemies) - 1) < 1e-9,
+    String(sum(content.normalEnemies)));
+  check(`ロケーション別: ${name} の強敵の出現率合計が1`, Math.abs(sum(content.eliteEnemies) - 1) < 1e-9,
+    String(sum(content.eliteEnemies)));
+  check(`ロケーション別: ${name} の探索イベント確率合計が1`, Math.abs(sum(content.explorationEvents) - 1) < 1e-9,
+    String(sum(content.explorationEvents)));
+  check(`ロケーション別: ${name} の報酬抽選確率合計が1`, Math.abs(sum(content.rewards.itemDrops) - 1) < 1e-9,
+    String(sum(content.rewards.itemDrops)));
+  for (const kind of ["normalEnemies", "eliteEnemies"]) {
+    const pool = api.encounterPool(id, kind);
+    equal(`ロケーション別: ${name} の${kind}がすべてマスタ定義へ解決できる`, pool.length, content[kind].length);
+    check(`ロケーション別: ${name} の${kind}が戦闘に必要なデータを持つ`,
+      pool.every((enemy) => enemy.maxHp > 0 && enemy.actions?.length > 0 && enemy.material && enemy.resistances));
+  }
+}
+
+// 敵テーブルの差別化
+const forestEnemies = api.encounterPool("forest", "normalEnemies").map((enemy) => enemy.name);
+const denEnemies = api.encounterPool("den", "normalEnemies").map((enemy) => enemy.name);
+equal("ロケーション別: 森の通常敵", forestEnemies.join(","), "フォレストウルフ,ワイルドボア,キラービー,ゴブリン");
+equal("ロケーション別: 巣穴の通常敵", denEnemies.join(","), "ゴブリン,洞窟コウモリ,洞窟スライム");
+const goblinRate = (id) => CONFIG.locations.content[id].normalEnemies.find((entry) => entry.id === "goblin").probability;
+check("ロケーション別: ゴブリンは巣穴で最も高頻度",
+  CONFIG.locations.content.den.normalEnemies.every((entry) => entry.probability <= goblinRate("den")));
+check("ロケーション別: 森のゴブリンは低頻度で主敵にしない",
+  goblinRate("forest") < goblinRate("den")
+  && CONFIG.locations.content.forest.normalEnemies.every((entry) => entry.id === "goblin" || entry.probability > goblinRate("forest")));
+equal("ロケーション別: 森の強敵はアルファウルフ", api.encounterPool("forest", "eliteEnemies")[0].name, "アルファウルフ");
+equal("ロケーション別: 巣穴の強敵は洞窟オーク", api.encounterPool("den", "eliteEnemies")[0].name, "洞窟オーク");
+check("ロケーション別: 森と巣穴で通常敵が重ならない（ゴブリンを除く）",
+  forestEnemies.filter((name) => denEnemies.includes(name)).join(",") === "ゴブリン");
+check("Utility AI: 森の強敵も既存のUtility AIで行動を選ぶ",
+  api.simulateUtility("alphaWolf", 0.9, 0.9).action.name === "牙の連撃"
+  && api.simulateUtility("alphaWolf", 0.9, 0.3).action.name === "喉笛狙い");
+
+// 探索イベントの差別化
+const eventIds = (id) => CONFIG.locations.content[id].explorationEvents.map((event) => event.id);
+check("ロケーション別: 森にゴブリンの痕跡・人の利用痕跡・自然素材採取がある",
+  ["goblinTrace", "humanTrace", "item"].every((id) => eventIds("forest").includes(id)), eventIds("forest").join(","));
+check("ロケーション別: 巣穴に拠点痕跡・粗雑な罠・盗品イベントがある",
+  ["camp", "trap", "item", "treasure"].every((id) => eventIds("den").includes(id)), eventIds("den").join(","));
+check("ロケーション別: 森と巣穴で同一のイベント文面を使わない",
+  CONFIG.locations.content.forest.explorationEvents.every((event) =>
+    !CONFIG.locations.content.den.explorationEvents.some((other) => other.text && other.text === event.text)));
+
+// 報酬・取得物の差別化
+const dropItems = (id) => CONFIG.locations.content[id].rewards.itemDrops.map((drop) => drop.item);
+check("ロケーション別: 森と巣穴で戦闘報酬テーブルが異なる",
+  JSON.stringify(CONFIG.locations.content.forest.rewards) !== JSON.stringify(CONFIG.locations.content.den.rewards));
+check("ロケーション別: 森の報酬は自然素材寄り", dropItems("forest").includes("アルンベリー") && dropItems("forest").includes("薬草"));
+check("ロケーション別: 巣穴の報酬は硬貨・鉱石・ゴブリン素材寄り",
+  ["古い硬貨", "鉄鉱石", "ゴブリンの牙"].every((item) => dropItems("den").includes(item)));
+check("ロケーション別: アルンベリーは森限定の取得物",
+  JSON.stringify(CONFIG.locations.content.den).includes("アルンベリー") === false);
+check("ロケーション別: アルンベリーは換金対象にしない",
+  CONFIG.materials.list.every((entry) => entry.item !== "アルンベリー"));
+equal("ロケーション別: イベント文面の{item}を置換する",
+  api.eventText("「{item}」×{amount} を手に入れた。", { item: "薬草", amount: 2 }), "「薬草」×2 を手に入れた。");
+
+// 実際に探索を回しても、他ロケーション固有の成果は出ない
+const denOnly = ["コウモリの翼膜", "スライムの粘液", "オークの角"];
+const forestOnly = ["狼の毛皮", "猪の牙", "蜂の毒針", "銀狼の毛皮", "アルンベリー"];
+function exploreMany(instance, locationId, times) {
+  instance.api.state.location = locationId;
+  for (let i = 0; i < times; i += 1) {
+    instance.api.state.currentHp = maxHp;
+    instance.api.state.currentMp = CONFIG.battle.player.maxMp;
+    instance.api.state.staminaSpent = 0;
+    instance.api.explore(50);
+  }
+  return Object.keys(instance.api.state.items);
+}
+const forestRun = loadPrototype(file, {});
+const forestItems = exploreMany(forestRun, "forest", 40);
+check("ロケーション別: 森の探索で巣穴固有の素材は出ない",
+  denOnly.every((item) => !forestItems.includes(item)), forestItems.join(","));
+const denRun = loadPrototype(file, {});
+denRun.api.worldState.locations.den.unlocked = true;
+const denItems = exploreMany(denRun, "den", 40);
+check("ロケーション別: 巣穴の探索で森固有の素材は出ない",
+  forestOnly.every((item) => !denItems.includes(item)), denItems.join(","));
+check("ロケーション別: 森の探索で森固有の成果を得られる",
+  forestOnly.some((item) => forestItems.includes(item)), forestItems.join(","));
+check("ロケーション別: 巣穴の探索で巣穴固有の素材を得られる",
+  denOnly.some((item) => denItems.includes(item)), denItems.join(","));
 
 /* ---------- 旧セーブからの移行 ---------- */
 const now = Date.now();
