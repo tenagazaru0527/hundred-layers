@@ -469,14 +469,49 @@ equal("候補除外: 未習得の強打は候補に現れない",
   ai.api.simulatePlayerStrategy("offensive", { ...healthy, abilities: { slashTraining: 0 } })
     .scores.map((score) => score.id).join(","), "attack");
 
-// ランダム性：randomBandが0なら決定論、正なら近いScoreの上位候補間で割れる
+// 基礎優先度0は「使用しない」というプレイヤー指定として扱う
+ai.api.CONFIG.battle.strategies.randomBand = 0;
+ai.api.state.tactics = { attack: 100, skill: 0, firstAid: 0 };
+equal("優先度0: 生存重視でもHP低下時に応急手当0なら使用しない", pick("defensive", danger), "通常攻撃");
+equal("優先度0: 攻撃重視でも強打0なら使用しない", pick("offensive", healthy), "通常攻撃");
+equal("優先度0: 除外理由を優先度0として記録",
+  excludedIds("offensive", healthy), "skill:unused,firstAid:unused");
+check("安全fallback: 候補が残る通常時はfallback扱いにしない",
+  ai.api.simulatePlayerStrategy("offensive", healthy).fallback === false);
+
+// 全候補が消えた場合の安全fallback。validTacticsが合計100%を要求するためUIからは到達しないが、
+// 優先度0・MP不足・使用回数上限・HP満タンの重なりで候補が全滅しても通常攻撃を選べること
+ai.api.state.tactics = { attack: 0, skill: 0, firstAid: 0 };
+const allExcluded = ai.api.simulatePlayerStrategy("offensive", danger);
+equal("安全fallback: 全候補が除外されても通常攻撃を選ぶ", allExcluded.action.name, "通常攻撃");
+check("安全fallback: fallbackとして記録する", allExcluded.fallback === true);
+equal("安全fallback: 全行動を除外理由付きで記録",
+  allExcluded.excluded.map((entry) => `${entry.id}:${entry.reason}`).join(","),
+  "attack:unused,skill:unused,firstAid:unused");
+
+// ランダム性：randomBandが0なら決定論、正なら最高Scoreに近い候補ほど選ばれやすい重み付き抽選
 const repeat = (times, fn) => new Set(Array.from({ length: times }, fn));
+ai.api.state.tactics = { attack: 60, skill: 20, firstAid: 20 };
 ai.api.CONFIG.battle.strategies.randomBand = 0;
 equal("ランダム性: randomBand0では選択が揺れない", repeat(40, () => pick("balanced", healthy)).size, 1);
-ai.api.state.tactics = { attack: 40, skill: 25, firstAid: 35 };   // 通常攻撃と強打のScoreを接近させる
+
+// バランス・HP満タンでは 通常攻撃=45 / 強打=25+15=40 となり、Score差5で近接する
+ai.api.state.tactics = { attack: 45, skill: 25, firstAid: 30 };
 ai.api.CONFIG.battle.strategies.randomBand = 10;
+const maxWeight = strategies.randomBand + strategies.randomWeightBase;
+const weighted = ai.api.simulatePlayerStrategy("balanced", healthy);
+equal("重み付き抽選: 対象は上位候補2件", weighted.top.map((entry) => entry.name).join(","), "通常攻撃,強打");
+equal("重み付き抽選: 最高Scoreの重みは randomBand + randomWeightBase",
+  weighted.top.find((entry) => entry.name === "通常攻撃").weight, maxWeight);
+equal("重み付き抽選: Score差5の候補は重みが5小さい",
+  weighted.top.find((entry) => entry.name === "強打").weight, maxWeight - 5);
 check("ランダム性: 近いScoreの上位候補間では選択が割れる",
   repeat(80, () => pick("balanced", healthy)).size > 1);
+// 一様抽選なら約50:50、重み付き（11:6）なら通常攻撃が明確に多くなる
+const picks = Array.from({ length: 1000 }, () => pick("balanced", healthy));
+const highScore = picks.filter((name) => name === "通常攻撃").length;
+check("重み付き抽選: 高Scoreの候補が明確に選ばれやすい",
+  highScore > (picks.length - highScore) * 1.3, `通常攻撃 ${highScore} / ${picks.length}`);
 ai.api.CONFIG.battle.strategies.randomBand = strategies.randomBand;
 ai.api.state.tactics = { attack: 60, skill: 20, firstAid: 20 };
 
@@ -501,6 +536,21 @@ check("回復行動: 最大HPを超えない",
   healBattle.turns.every((turn) => turn.playerHp <= CONFIG.battle.player.maxHp));
 check("回復行動: 戦闘ログへ回復量を表示", /HPが\d+回復/.test(ai.api.battleHtml(healBattle)));
 check("回復行動: 戦闘ログへ作戦を表示", /作戦：生存重視/.test(ai.api.battleHtml(healBattle)));
+
+// 実戦闘でも全候補除外から安全fallbackできること
+ai.api.state.tactics = { attack: 0, skill: 0, firstAid: 0 };
+ai.api.state.currentHp = CONFIG.battle.player.maxHp;
+ai.api.state.currentMp = CONFIG.battle.player.maxMp;
+const fallbackBattle = ai.api.runBattle([healDummy]);
+check("安全fallback: 実戦闘でも通常攻撃を実行する",
+  fallbackBattle.turns.every((turn) => turn.playerAction === "通常攻撃"),
+  fallbackBattle.turns.map((turn) => turn.playerAction).join(","));
+equal("安全fallback: MPを消費しない", fallbackBattle.playerMp, CONFIG.battle.player.maxMp);
+check("安全fallback: 戦闘ログへfallbackを表示",
+  /通常攻撃へfallback/.test(ai.api.battleHtml(fallbackBattle)));
+check("安全fallback: 戦闘ログへ優先度0の除外理由を表示",
+  /優先度0/.test(ai.api.battleHtml(fallbackBattle)));
+ai.api.state.tactics = { attack: 60, skill: 20, firstAid: 20 };
 
 // 保存と再読込
 ai.api.state.strategy = "offensive";
