@@ -130,6 +130,9 @@
 
 設計情報は `docs/` 配下で管理します。
 
+- [`docs/DOC_MAP.md`](docs/DOC_MAP.md)
+  変更テーマから確認すべきSSOTと関連文書を選ぶルーティング表
+
 - [`docs/GAME_CONCEPT.md`](docs/GAME_CONCEPT.md)  
   ゲームの目的、根本思想、目指す体験
 
@@ -141,6 +144,12 @@
 
 - [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md)  
   未決事項と今後決めるべき論点
+
+- [`docs/DECISIONS.md`](docs/DECISIONS.md)
+  主要な設計判断の理由、比較した方向、再検討条件を示す索引
+
+- [`status.html`](status.html)
+  現在地と直近予定を共有する手動更新スナップショット
 
 - `docs/minutes/`  
   企画会議・検討内容の議事録
