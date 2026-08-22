@@ -18,8 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Check playable prototype
-        run: python3 scripts/check_prototype.py
+      - name: Check Pages content
+        run: |
+          python3 scripts/check_prototype.py
+          python3 scripts/check_status_page.py
 
   build-pages:
     needs: test
@@ -31,6 +33,7 @@ jobs:
         run: |
           mkdir -p _site
           cp prototype.html _site/index.html
+          cp status.html status-data.json _site/
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site

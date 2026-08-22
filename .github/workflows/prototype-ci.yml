@@ -14,5 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Check playable prototype
-        run: python3 scripts/check_prototype.py
+      - name: Check Pages content
+        run: |
+          python3 scripts/check_prototype.py
+          python3 scripts/check_status_page.py
