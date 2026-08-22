@@ -80,8 +80,8 @@ def check_link(link: object, path: str) -> None:
 
 
 def check_card_items(items: object, path: str) -> None:
-    if not isinstance(items, list) or not items:
-        fail(f"{path} must be a non-empty array")
+    if not isinstance(items, list):
+        fail(f"{path} must be an array")
     for index, item in enumerate(items):
         item_path = f"{path}[{index}]"
         if not isinstance(item, dict):

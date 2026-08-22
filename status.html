@@ -282,6 +282,11 @@
       const section = element("section");
       section.append(sectionHeading(label, title, description));
       const cards = element("div", "cards");
+      if (!items.length) {
+        const empty = element("article", "card");
+        empty.append(element("p", "", "現在なし"));
+        cards.append(empty);
+      }
       items.forEach((item) => {
         const card = element("article", "card");
         card.append(element("h3", "", item.title), element("p", "", item.summary));
