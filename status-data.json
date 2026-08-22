@@ -1,0 +1,246 @@
+{
+  "updatedAt": "2026-08-22T09:00:00+09:00",
+  "baseCommit": {
+    "sha": "474d2234d2ccf3407f11aadccf76ce8082b45c92",
+    "url": "https://github.com/tenagazaru0527/hundred-layers/commit/474d2234d2ccf3407f11aadccf76ce8082b45c92"
+  },
+  "lastPullRequest": {
+    "number": 81,
+    "title": "強敵単体と長期探索の継戦性を分離して検証する",
+    "url": "https://github.com/tenagazaru0527/hundred-layers/pull/81"
+  },
+  "current": {
+    "theme": "第1層の探索ループを通した戦術と継戦性の検証",
+    "summary": "アルンの森からゴブリンの巣穴、ボス解放、第2層解放までの進行骨格と、ロケーション差・作戦型Utility AI・強敵直接テスト・継戦性サマリーをPrototypeへ接続済みです。現在は、これらが判断材料として機能するかをHuman Verificationで確認する段階です。",
+    "primaryIssue": {
+      "label": "Issue #82 開発状況ページ",
+      "url": "https://github.com/tenagazaru0527/hundred-layers/issues/82"
+    },
+    "decisionPoint": "作戦ごとの行動差と、探索投入量ごとのHP / MP消耗が、次の探索前の判断につながるか。"
+  },
+  "progressSinceLastUpdate": [
+    {
+      "title": "初回スナップショットを作成",
+      "summary": "前回更新はないため、最新mainの状態を初期基準として整理しました。全commitの履歴ではなく、現在地の理解に必要な直近の主要変更だけを掲載しています。",
+      "links": []
+    },
+    {
+      "title": "プレイヤーの作戦型Utility AIを比較可能にした",
+      "summary": "バランス・攻撃重視・生存重視の3作戦と検証用回復行動を追加し、戦況とMP残量に応じた行動選択を試せるようにしました。正式採用は未決です。",
+      "links": [
+        {
+          "label": "PR #75",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/75"
+        }
+      ]
+    },
+    {
+      "title": "第1層の進行骨格とロケーション差を実装",
+      "summary": "アルンの森とゴブリンの巣穴に独立した踏破率・解放状態・敵・探索イベント・報酬を持たせ、ボス解放から第2層解放までの最小導線を接続しました。",
+      "links": [
+        {
+          "label": "PR #77",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/77"
+        },
+        {
+          "label": "PR #79",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/79"
+        }
+      ]
+    },
+    {
+      "title": "強敵と長期探索を分けて検証できるようにした",
+      "summary": "強敵との直接戦闘と、通常探索のHP / MP・戦闘回数・途中中断をまとめる継戦性サマリーを追加しました。ゲームバランス自体は変更していません。",
+      "links": [
+        {
+          "label": "PR #81",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/81"
+        }
+      ]
+    }
+  ],
+  "features": [
+    {
+      "name": "探索・帰還・準備の基本ループ",
+      "implementationStatus": "実装済み",
+      "specificationStatus": "Prototype仮採用",
+      "note": "スタミナ投入、連続探索、HP / MP持越し、宿屋、素材換金、装備変更まで接続済み。数値と詳細ルールは仮です。",
+      "links": [
+        {
+          "label": "Prototype設計",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/PROTOTYPE.md"
+        }
+      ]
+    },
+    {
+      "name": "第1層の世界進行",
+      "implementationStatus": "検証中",
+      "specificationStatus": "Prototype仮採用",
+      "note": "森→巣穴→ボス解放→第2層解放をローカルのworldStateで再現。正式なオンライン共有は未実装です。",
+      "links": [
+        {
+          "label": "PR #77",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/77"
+        }
+      ]
+    },
+    {
+      "name": "作戦型オートバトル",
+      "implementationStatus": "検証中",
+      "specificationStatus": "未決",
+      "note": "3種の作戦でUtility評価を比較可能。使用率方式から正式に移行するかはHuman Verification後に判断します。",
+      "links": [
+        {
+          "label": "PR #75",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/75"
+        }
+      ]
+    },
+    {
+      "name": "AbilityからSkillを習得する育成構造",
+      "implementationStatus": "検証中",
+      "specificationStatus": "確定",
+      "note": "基本パラメータ→Ability→Skillの構造は正式採用。Prototypeでは斬撃術と強打だけの最小縦切りです。",
+      "links": [
+        {
+          "label": "PR #72",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/72"
+        }
+      ]
+    },
+    {
+      "name": "ロケーション別コンテンツ",
+      "implementationStatus": "検証中",
+      "specificationStatus": "Prototype仮採用",
+      "note": "森と巣穴で敵・強敵・探索イベント・報酬を分離。出現率とバランスは仮値です。",
+      "links": [
+        {
+          "label": "PR #79",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/79"
+        }
+      ]
+    },
+    {
+      "name": "正式な階層ボス戦",
+      "implementationStatus": "未実装",
+      "specificationStatus": "未決",
+      "note": "現在は解放と撃破フラグを確認する検証用ボタンのみ。戦闘形式・ギミック・人数・報酬は未決です。",
+      "links": [
+        {
+          "label": "ボス未決事項",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/OPEN_QUESTIONS.md#6-p2ボス攻略に関する未決事項"
+        }
+      ]
+    },
+    {
+      "name": "オンライン共有進行",
+      "implementationStatus": "未実装",
+      "specificationStatus": "確定",
+      "note": "探索成果をロケーション単位で共有する方針は採用済み。現Prototypeは単一ブラウザ内のローカルモックです。",
+      "links": [
+        {
+          "label": "ゲーム設計",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/GAME_DESIGN.md#5-ダンジョンの共有探索進行踏破率"
+        }
+      ]
+    },
+    {
+      "name": "生産職のゲームループ",
+      "implementationStatus": "未実装",
+      "specificationStatus": "未決",
+      "note": "戦闘職の補助だけではない独立した遊びにする方法を、ゲーム全体設計の重要課題として継続検討します。",
+      "links": [
+        {
+          "label": "生産職の未決事項",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/OPEN_QUESTIONS.md#9-p2戦闘職生産職に関する未決事項"
+        }
+      ]
+    }
+  ],
+  "shelved": [
+    {
+      "title": "第1層の追加コンテンツ・ビジュアル候補",
+      "summary": "敵、イベント、背景などの案は有用性を保ったままバックログへ置き、現在の検証に必要なものだけを選んで導入します。",
+      "links": [
+        {
+          "label": "Issue #73",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/73"
+        }
+      ]
+    },
+    {
+      "title": "100%後のねらいうち探索",
+      "summary": "有力案ですが、まず現行の共有進行モックと通常探索継続の体感を確認するため、実装を保留しています。",
+      "links": [
+        {
+          "label": "関連する未決事項",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/OPEN_QUESTIONS.md#56-100後のねらいうち探索"
+        }
+      ]
+    }
+  ],
+  "consultations": [
+    {
+      "title": "作戦型Utility AIを本線にするか",
+      "summary": "3作戦で意図した行動差が読み取れるか、意外性が不快なランダムさになっていないかをHuman Verificationで確認する必要があります。",
+      "links": [
+        {
+          "label": "Issue #74",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/74"
+        }
+      ]
+    },
+    {
+      "title": "強敵と長期探索の消耗感",
+      "summary": "アルファウルフの強さ、スタミナ投入量ごとの継戦性、追加の回復手段が必要かは、今回追加した検証導線で早めに確認したい事項です。",
+      "links": [
+        {
+          "label": "Issue #80",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/80"
+        }
+      ]
+    },
+    {
+      "title": "個人探索と世界進行の接続感",
+      "summary": "ローカルモックでも、自分の探索が世界を進め、次の目標を解放したと感じられるかを確認する必要があります。",
+      "links": [
+        {
+          "label": "Issue #76",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/76"
+        }
+      ]
+    }
+  ],
+  "nextSteps": [
+    {
+      "title": "開発状況ページをPagesへ追加する",
+      "summary": "本スナップショットを表示し、次回は基準commit以降だけを中心に更新できる運用を開始します。",
+      "links": [
+        {
+          "label": "Issue #82",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/82"
+        }
+      ]
+    },
+    {
+      "title": "PrototypeのHuman Verificationを行う",
+      "summary": "作戦差、強敵単体、長期探索の継戦性、第1層の進行感を実プレイで確認し、次の調整Issueを判断します。",
+      "links": [
+        {
+          "label": "Prototypeを開く",
+          "url": "./"
+        }
+      ]
+    },
+    {
+      "title": "設計判断の理由を残す方法を整える",
+      "summary": "仕様書を肥大化させず、重要な判断理由を後から追える軽量な記録方法を検討します。",
+      "links": [
+        {
+          "label": "Issue #83",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/83"
+        }
+      ]
+    }
+  ]
+}

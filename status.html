@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Hundred Layersの開発状況スナップショット">
+  <title>開発状況 | Hundred Layers</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1118;
+      --surface: #121c27;
+      --surface-raised: #182534;
+      --line: #2a3a4d;
+      --text: #e9f0f7;
+      --muted: #9fb0c1;
+      --gold: #efc66d;
+      --cyan: #65d4dc;
+      --green: #78d6a1;
+      --violet: #c2a8ff;
+      --orange: #f3aa72;
+      --red: #ef8e91;
+      --radius: 16px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(45, 104, 139, 0.22), transparent 34rem),
+        linear-gradient(180deg, #0d151e 0, var(--bg) 38rem);
+      color: var(--text);
+      line-height: 1.65;
+    }
+
+    a { color: var(--cyan); }
+    a:hover { color: #9cebf0; }
+
+    .shell {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 64px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 42px;
+    }
+
+    .brand {
+      color: var(--gold);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .prototype-link,
+    .link-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.48rem 0.8rem;
+      background: rgba(18, 28, 39, 0.72);
+      color: var(--text);
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .prototype-link:hover,
+    .link-pill:hover { border-color: var(--cyan); }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.38fr);
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow,
+    .section-label {
+      margin: 0 0 8px;
+      color: var(--gold);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 12px; font-size: clamp(2.25rem, 7vw, 4.9rem); line-height: 1.02; letter-spacing: -0.045em; }
+    h2 { margin-bottom: 8px; font-size: clamp(1.35rem, 3vw, 2rem); letter-spacing: -0.02em; }
+    h3 { margin-bottom: 6px; font-size: 1rem; }
+
+    .lead { max-width: 49rem; margin-bottom: 0; color: var(--muted); font-size: 1.04rem; }
+
+    .snapshot-meta {
+      border-left: 1px solid var(--line);
+      padding-left: 22px;
+    }
+
+    .meta-row { margin-bottom: 14px; }
+    .meta-row:last-child { margin-bottom: 0; }
+    .meta-label { display: block; color: var(--muted); font-size: 0.73rem; font-weight: 700; }
+    .meta-value { font-size: 0.9rem; overflow-wrap: anywhere; }
+    .meta-value code { color: var(--gold); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .notice {
+      margin: 0 0 32px;
+      border: 1px solid rgba(101, 212, 220, 0.32);
+      border-radius: 12px;
+      padding: 13px 16px;
+      background: rgba(101, 212, 220, 0.07);
+      color: #c5dce3;
+      font-size: 0.86rem;
+    }
+
+    .current-card {
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 48px;
+      border: 1px solid #40536a;
+      border-radius: var(--radius);
+      padding: clamp(22px, 4vw, 36px);
+      background: linear-gradient(135deg, rgba(29, 54, 73, 0.95), rgba(20, 31, 43, 0.96));
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+    }
+
+    .current-card::after {
+      position: absolute;
+      inset: auto -70px -90px auto;
+      width: 220px;
+      height: 220px;
+      border: 1px solid rgba(239, 198, 109, 0.25);
+      border-radius: 50%;
+      content: "";
+    }
+
+    .current-summary { max-width: 52rem; color: #cbd8e4; }
+    .decision { margin: 24px 0 0; border-left: 3px solid var(--gold); padding-left: 14px; }
+    .decision strong { display: block; margin-bottom: 3px; color: var(--gold); font-size: 0.78rem; }
+
+    section { margin-top: 48px; }
+    .section-head { margin-bottom: 18px; }
+    .section-description { margin-bottom: 0; color: var(--muted); font-size: 0.9rem; }
+
+    .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .card { border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; background: rgba(18, 28, 39, 0.78); }
+    .card p { margin-bottom: 14px; color: var(--muted); font-size: 0.91rem; }
+    .card p:last-child { margin-bottom: 0; }
+
+    .links { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+    .link-pill { padding: 0.3rem 0.65rem; color: var(--cyan); font-size: 0.75rem; }
+
+    .feature-list { display: grid; gap: 10px; }
+    .feature {
+      display: grid;
+      grid-template-columns: minmax(180px, 0.75fr) minmax(210px, 0.65fr) minmax(280px, 1.6fr);
+      gap: 18px;
+      align-items: start;
+      border-top: 1px solid var(--line);
+      padding: 18px 4px;
+    }
+
+    .feature:last-child { border-bottom: 1px solid var(--line); }
+    .feature-note { color: var(--muted); font-size: 0.88rem; }
+    .badges { display: flex; flex-wrap: wrap; gap: 7px; }
+    .badge { border: 1px solid currentColor; border-radius: 999px; padding: 0.2rem 0.55rem; font-size: 0.72rem; font-weight: 800; white-space: nowrap; }
+    .implemented { color: var(--green); }
+    .validating { color: var(--orange); }
+    .unimplemented { color: var(--red); }
+    .confirmed { color: var(--cyan); }
+    .assumption { color: var(--violet); }
+    .candidate { color: var(--gold); }
+    .undecided { color: var(--muted); }
+
+    .three-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .three-columns section { margin-top: 0; }
+    .three-columns .cards { grid-template-columns: 1fr; }
+
+    .error { border-color: var(--red); color: #ffd5d6; }
+
+    footer { margin-top: 56px; border-top: 1px solid var(--line); padding-top: 20px; color: var(--muted); font-size: 0.78rem; }
+
+    @media (max-width: 820px) {
+      .hero, .three-columns { grid-template-columns: 1fr; }
+      .snapshot-meta { border-left: 0; border-top: 1px solid var(--line); padding: 18px 0 0; }
+      .feature { grid-template-columns: 1fr; gap: 9px; }
+    }
+
+    @media (max-width: 560px) {
+      .shell { width: min(100% - 22px, 1120px); padding-top: 18px; }
+      .topbar { margin-bottom: 30px; }
+      .cards { grid-template-columns: 1fr; }
+      .prototype-link { font-size: 0.76rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="topbar" aria-label="ページ間移動">
+      <span class="brand">Hundred Layers / Dev Status</span>
+      <a class="prototype-link" href="./">Prototypeへ戻る →</a>
+    </nav>
+
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Development snapshot</p>
+        <h1>開発状況</h1>
+        <p class="lead">共同開発者と開発者本人が、いま何を検証し、次に何を判断するのかを短時間で確認するためのスナップショットです。</p>
+      </div>
+      <div class="snapshot-meta" id="snapshotMeta" aria-live="polite">
+        <div class="meta-row"><span class="meta-label">読み込み中</span><span class="meta-value">status-data.json を確認しています…</span></div>
+      </div>
+    </header>
+
+    <p class="notice">このページは正式仕様や実装状態のSSOTではありません。根拠はGitHub上のコード・設計書・Issue・Pull Requestを参照してください。</p>
+
+    <div id="statusContent" aria-live="polite">
+      <noscript><p class="notice error">このページの状況データ表示にはJavaScriptが必要です。</p></noscript>
+    </div>
+
+    <footer>必要なタイミングで手動更新します。次回は上部の基準commit以降を中心に確認します。</footer>
+  </main>
+
+  <script>
+    const statusClasses = {
+      "実装済み": "implemented",
+      "検証中": "validating",
+      "未実装": "unimplemented",
+      "確定": "confirmed",
+      "Prototype仮採用": "assumption",
+      "有力案": "candidate",
+      "未決": "undecided"
+    };
+
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function safeLink(link, className = "link-pill") {
+      const anchor = element("a", className, link.label);
+      const url = new URL(link.url, window.location.href);
+      if (url.protocol !== "https:" && url.origin !== window.location.origin) {
+        throw new Error("許可されていないリンク形式です");
+      }
+      anchor.href = url.href;
+      if (url.origin !== window.location.origin) {
+        anchor.target = "_blank";
+        anchor.rel = "noreferrer";
+      }
+      return anchor;
+    }
+
+    function appendLinks(parent, links) {
+      if (!links.length) return;
+      const container = element("div", "links");
+      links.forEach((link) => container.append(safeLink(link)));
+      parent.append(container);
+    }
+
+    function sectionHeading(label, title, description) {
+      const header = element("div", "section-head");
+      header.append(element("p", "section-label", label), element("h2", "", title));
+      if (description) header.append(element("p", "section-description", description));
+      return header;
+    }
+
+    function cardsSection(label, title, description, items) {
+      const section = element("section");
+      section.append(sectionHeading(label, title, description));
+      const cards = element("div", "cards");
+      items.forEach((item) => {
+        const card = element("article", "card");
+        card.append(element("h3", "", item.title), element("p", "", item.summary));
+        appendLinks(card, item.links);
+        cards.append(card);
+      });
+      section.append(cards);
+      return section;
+    }
+
+    function renderMeta(data) {
+      const meta = document.querySelector("#snapshotMeta");
+      meta.replaceChildren();
+      const updated = new Intl.DateTimeFormat("ja-JP", {
+        dateStyle: "long",
+        timeStyle: "short",
+        timeZone: "Asia/Tokyo"
+      }).format(new Date(data.updatedAt));
+
+      const rows = [
+        ["最終更新", updated],
+        ["基準commit", data.baseCommit.sha.slice(0, 7)],
+        ["最終反映PR", data.lastPullRequest ? `#${data.lastPullRequest.number} ${data.lastPullRequest.title}` : "記録なし"]
+      ];
+      rows.forEach(([label, value], index) => {
+        const row = element("div", "meta-row");
+        row.append(element("span", "meta-label", label));
+        if (index === 1) {
+          const link = safeLink({ label: value, url: data.baseCommit.url }, "meta-value");
+          const code = element("code", "", value);
+          link.replaceChildren(code);
+          row.append(link);
+        } else if (index === 2 && data.lastPullRequest) {
+          row.append(safeLink({ label: value, url: data.lastPullRequest.url }, "meta-value"));
+        } else {
+          row.append(element("span", "meta-value", value));
+        }
+        meta.append(row);
+      });
+    }
+
+    function renderCurrent(data) {
+      const card = element("article", "current-card");
+      card.append(element("p", "section-label", "Current position"));
+      card.append(element("h2", "", data.current.theme));
+      card.append(element("p", "current-summary", data.current.summary));
+      appendLinks(card, [data.current.primaryIssue]);
+      const decision = element("p", "decision");
+      decision.append(element("strong", "", "次の判断ポイント"), document.createTextNode(data.current.decisionPoint));
+      card.append(decision);
+      return card;
+    }
+
+    function renderFeatures(features) {
+      const section = element("section");
+      section.append(sectionHeading("Feature overview", "主要機能の状態", "実装状態と仕様確定度は別軸です。実装済みでも正式採用とは限りません。"));
+      const list = element("div", "feature-list");
+      features.forEach((feature) => {
+        const row = element("article", "feature");
+        row.append(element("h3", "", feature.name));
+        const badges = element("div", "badges");
+        [feature.implementationStatus, feature.specificationStatus].forEach((status) => {
+          badges.append(element("span", `badge ${statusClasses[status] || ""}`, status));
+        });
+        row.append(badges);
+        const detail = element("div", "feature-note", feature.note);
+        appendLinks(detail, feature.links);
+        row.append(detail);
+        list.append(row);
+      });
+      section.append(list);
+      return section;
+    }
+
+    function renderStatus(data) {
+      renderMeta(data);
+      const content = document.querySelector("#statusContent");
+      const lower = element("div", "three-columns");
+      lower.append(
+        cardsSection("Shelved", "棚上げ中", "良い案だが、いま固定・実装しないもの。", data.shelved),
+        cardsSection("Consult soon", "早めに相談", "近いうちに人間の判断が必要なもの。", data.consultations),
+        cardsSection("Next", "直近の予定", "次に行う実装・確認・判断。", data.nextSteps)
+      );
+      content.replaceChildren(
+        renderCurrent(data),
+        cardsSection("Recent progress", "前回更新以降の進展", "主要な進展だけを要約しています。", data.progressSinceLastUpdate),
+        renderFeatures(data.features),
+        lower
+      );
+    }
+
+    function showError(error) {
+      const content = document.querySelector("#statusContent");
+      const message = element("p", "notice error", "状況データを読み込めませんでした。時間を置いて再読み込みしてください。");
+      content.replaceChildren(message);
+      console.error(error);
+    }
+
+    fetch("./status-data.json", { cache: "no-cache" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`status-data.json: ${response.status}`);
+        return response.json();
+      })
+      .then(renderStatus)
+      .catch(showError);
+  </script>
+</body>
+</html>
