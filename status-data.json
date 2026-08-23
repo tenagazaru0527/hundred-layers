@@ -1,60 +1,49 @@
 {
-  "updatedAt": "2026-08-22T09:21:46+09:00",
+  "updatedAt": "2026-08-23T19:24:00+09:00",
   "baseCommit": {
-    "sha": "474d2234d2ccf3407f11aadccf76ce8082b45c92",
-    "url": "https://github.com/tenagazaru0527/hundred-layers/commit/474d2234d2ccf3407f11aadccf76ce8082b45c92"
+    "sha": "ef56c178d383f4906a601c5ab4b7e396b08aa240",
+    "url": "https://github.com/tenagazaru0527/hundred-layers/commit/ef56c178d383f4906a601c5ab4b7e396b08aa240"
   },
   "lastPullRequest": {
-    "number": 81,
-    "title": "強敵単体と長期探索の継戦性を分離して検証する",
-    "url": "https://github.com/tenagazaru0527/hundred-layers/pull/81"
+    "number": 85,
+    "title": "設計判断の理由を残すDecision Logを追加する",
+    "url": "https://github.com/tenagazaru0527/hundred-layers/pull/85"
   },
   "current": {
-    "theme": "長期探索を成立させる継戦手段の検討",
-    "summary": "Human Verificationでは、Lv5程度かつHP / MPが十分ならアルファウルフ単体に勝てる一方、通常探索で戦闘が2回発生するとほぼ確実に敗北しました。敵単体の強さより、HP / MPを持ち越す探索に対する継戦手段不足が主要因と判断し、敵能力値の単純な弱体化は保留しています。",
+    "theme": "長期探索を成立させる継戦手段のPrototype検証",
+    "summary": "共同開発者向けの開発状況ページと軽量Decision Logを整備し、情報連携基盤は一区切りしました。ゲーム本体では、Lv5程度かつHP / MPが十分ならアルファウルフ単体に勝てる一方、通常探索では戦闘が2回発生するとほぼ確実に敗北することを確認済みです。敵単体の単純弱体化ではなく、複数戦闘を成立させる継戦手段を次のPrototype検証対象として切り分けます。",
     "primaryIssue": {
-      "label": "PR #81 Human Verification結果",
+      "label": "PR #81 継戦性Human Verification",
       "url": "https://github.com/tenagazaru0527/hundred-layers/pull/81"
     },
-    "decisionPoint": "探索前準備、戦闘間回復、回復系Skill / Passive、消耗品のうち、どれを次のPrototype検証対象として切り分けるか。"
+    "decisionPoint": "探索前準備、戦闘間回復、回復系Skill / Passive、消耗品の候補から、複数戦闘を成立させる最小の検証手段を1つに絞る。探索前準備型の回復は有力候補だが、まだ正式採用しない。"
   },
   "progressSinceLastUpdate": [
     {
-      "title": "初回スナップショットを作成",
-      "summary": "前回更新はないため、最新mainの状態を初期基準として整理しました。全commitの履歴ではなく、現在地の理解に必要な直近の主要変更だけを掲載しています。",
-      "links": []
-    },
-    {
-      "title": "プレイヤーの作戦型Utility AIを比較可能にした",
-      "summary": "バランス・攻撃重視・生存重視の3作戦と検証用回復行動を追加し、戦況とMP残量に応じた行動選択を試せるようにしました。正式採用は未決です。",
+      "title": "開発状況ページをGitHub Pagesへ追加",
+      "summary": "現在地、前回以降の進展、主要機能、棚上げ、相談事項、直近予定を表示するstatusページを追加しました。表示とstatus-data.jsonを分離し、mainの基準commit以降だけを中心に手動更新できる構造にしています。",
       "links": [
         {
-          "label": "PR #75",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/75"
-        }
-      ]
-    },
-    {
-      "title": "第1層の進行骨格とロケーション差を実装",
-      "summary": "アルンの森とゴブリンの巣穴に独立した踏破率・解放状態・敵・探索イベント・報酬を持たせ、ボス解放から第2層解放までの最小導線を接続しました。",
-      "links": [
-        {
-          "label": "PR #77",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/77"
+          "label": "PR #84",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/84"
         },
         {
-          "label": "PR #79",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/79"
+          "label": "Issue #82",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/82"
         }
       ]
     },
     {
-      "title": "強敵と長期探索を分け、継戦手段不足を特定した",
-      "summary": "強敵直接テストと継戦性サマリーを使ったHuman Verificationにより、単体の敵能力値よりも、複数戦闘に耐える回復・準備手段の不足が主要因だと判断しました。ゲームバランス自体はまだ変更していません。",
+      "title": "主要な設計判断を追うDecision Logを追加",
+      "summary": "現在の仕様そのものではなく、なぜその判断へ至ったかを追う軽量Decision Logを追加しました。初期6件だけを登録し、正式文書・Issue・PRを根拠として参照する索引にしています。",
       "links": [
         {
-          "label": "PR #81",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/81"
+          "label": "PR #85",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/85"
+        },
+        {
+          "label": "Decision Log",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/DECISIONS.md"
         }
       ]
     }
@@ -62,37 +51,49 @@
   "features": [
     {
       "name": "探索・帰還・準備の基本ループ",
-      "implementationStatus": "実装済み",
+      "implementationStatus": "検証中",
       "specificationStatus": "Prototype仮採用",
-      "note": "スタミナ投入、連続探索、HP / MP持越し、宿屋、素材換金、装備変更まで接続済み。数値と詳細ルールは仮です。",
+      "note": "スタミナ投入、連続探索、HP / MP持越し、宿屋、素材換金、装備変更まで接続済み。複数戦闘で継戦性が不足することが判明しており、次のPrototype検証対象です。",
       "links": [
         {
           "label": "Prototype設計",
           "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/PROTOTYPE.md"
+        },
+        {
+          "label": "PR #81",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/81"
         }
       ]
     },
     {
       "name": "第1層の世界進行",
-      "implementationStatus": "検証中",
+      "implementationStatus": "実装済み",
       "specificationStatus": "Prototype仮採用",
-      "note": "森→巣穴→ボス解放→第2層解放をローカルのworldStateで再現。正式なオンライン共有は未実装です。",
+      "note": "森→巣穴→ボス解放→第2層解放をローカルworldStateで再現し、Human Verificationで現在地・次の行動・解放導線が伝わることを確認済み。正式なオンライン共有は未実装です。",
       "links": [
         {
           "label": "PR #77",
           "url": "https://github.com/tenagazaru0527/hundred-layers/pull/77"
+        },
+        {
+          "label": "PR #79 HV",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/79"
         }
       ]
     },
     {
       "name": "作戦型オートバトル",
       "implementationStatus": "検証中",
-      "specificationStatus": "未決",
-      "note": "3種の作戦でUtility評価を比較可能。使用率方式から正式に移行するかはHuman Verification後に判断します。",
+      "specificationStatus": "Prototype仮採用",
+      "note": "3種の作戦でUtility評価を比較可能。Human Verificationで作戦による違いは確認済みですが、正式な作戦方式・種類・Score式は未決です。",
       "links": [
         {
           "label": "PR #75",
           "url": "https://github.com/tenagazaru0527/hundred-layers/pull/75"
+        },
+        {
+          "label": "Decision D-005",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/DECISIONS.md#d-005-プレイヤー作戦型utility-aiを比較検証する"
         }
       ]
     },
@@ -100,19 +101,23 @@
       "name": "AbilityからSkillを習得する育成構造",
       "implementationStatus": "検証中",
       "specificationStatus": "確定",
-      "note": "基本パラメータ→Ability→Skillの構造は正式採用。Prototypeでは斬撃術と強打だけの最小縦切りです。",
+      "note": "基本パラメータ→Ability→Skillの構造は正式採用。Prototypeでは斬撃術と強打だけの最小縦切りで、AbilityやSkillの種類・数値は仮です。",
       "links": [
         {
           "label": "PR #72",
           "url": "https://github.com/tenagazaru0527/hundred-layers/pull/72"
+        },
+        {
+          "label": "Decision D-002",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/DECISIONS.md#d-002-ability-lv到達時にskillを自動習得する"
         }
       ]
     },
     {
       "name": "ロケーション別コンテンツ",
-      "implementationStatus": "検証中",
+      "implementationStatus": "実装済み",
       "specificationStatus": "Prototype仮採用",
-      "note": "森と巣穴で敵・強敵・探索イベント・報酬を分離。出現率とバランスは仮値です。",
+      "note": "森と巣穴で敵・強敵・探索イベント・報酬を分離し、Human Verificationで別ロケーションとして感じられることを確認済み。出現率とバランスは仮値です。",
       "links": [
         {
           "label": "PR #79",
@@ -124,7 +129,7 @@
       "name": "正式な階層ボス戦",
       "implementationStatus": "未実装",
       "specificationStatus": "未決",
-      "note": "現在は解放と撃破フラグを確認する検証用ボタンのみ。戦闘形式・ギミック・人数・報酬は未決です。",
+      "note": "現在は解放と撃破フラグを確認する検証用ボタンのみ。継戦性を確認した後、第1層ループを通す次段階候補として戦闘形式・ギミック・人数・報酬を検討します。",
       "links": [
         {
           "label": "ボス未決事項",
@@ -160,17 +165,21 @@
   "shelved": [
     {
       "title": "第1層の追加コンテンツ・ビジュアル候補",
-      "summary": "敵、イベント、背景などの案は有用性を保ったままバックログへ置き、現在の検証に必要なものだけを選んで導入します。",
+      "summary": "敵、イベント、背景などの案はIssue #73のアイデアバックログで保持し、現在の検証に必要なものだけを再評価して導入します。バックログ運用自体は確定していますが、各候補の正式採用は意味しません。",
       "links": [
         {
           "label": "Issue #73",
           "url": "https://github.com/tenagazaru0527/hundred-layers/issues/73"
+        },
+        {
+          "label": "Decision D-004",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/DECISIONS.md#d-004-第1層コンテンツ案を正式化せずバックログで保持する"
         }
       ]
     },
     {
       "title": "100%後のねらいうち探索",
-      "summary": "有力案ですが、まず現行の共有進行モックと通常探索継続の体感を確認するため、実装を保留しています。",
+      "summary": "有力案ですが、通常探索継続は成立しているため、現在は継戦性と第1層の基本ループ完成を優先して実装を保留しています。",
       "links": [
         {
           "label": "関連する未決事項",
@@ -181,40 +190,24 @@
   ],
   "consultations": [
     {
-      "title": "作戦型Utility AIを本線にするか",
-      "summary": "3作戦で意図した行動差が読み取れるか、意外性が不快なランダムさになっていないかをHuman Verificationで確認する必要があります。",
-      "links": [
-        {
-          "label": "Issue #74",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/74"
-        }
-      ]
-    },
-    {
       "title": "次に検証する継戦手段",
-      "summary": "探索前準備、戦闘間回復、回復系Skill / Passive、消耗品のどれから試すかを決める必要があります。敵能力値の単純弱体化は先に行いません。",
+      "summary": "探索中に2回戦闘するとほぼ敗北する現状に対し、探索前準備、戦闘間回復、回復系Skill / Passive、消耗品のどれを最小Prototypeとして先に試すかを決める必要があります。敵能力値の単純弱体化は先に行いません。",
       "links": [
         {
           "label": "PR #81 検証結果",
           "url": "https://github.com/tenagazaru0527/hundred-layers/pull/81"
-        }
-      ]
-    },
-    {
-      "title": "個人探索と世界進行の接続感",
-      "summary": "ローカルモックでも、自分の探索が世界を進め、次の目標を解放したと感じられるかを確認する必要があります。",
-      "links": [
+        },
         {
-          "label": "Issue #76",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/76"
+          "label": "Decision D-006",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/DECISIONS.md#d-006-強敵を弱体化する前に探索の継戦性を分離検証する"
         }
       ]
     }
   ],
   "nextSteps": [
     {
-      "title": "継戦手段の検証を別Issueへ切り分ける",
-      "summary": "既知の敗因に対して候補を一度に追加せず、次に比較する回復・準備手段と受入条件を絞ります。",
+      "title": "継戦手段を最小Prototype Issueへ切り分ける",
+      "summary": "複数候補を同時に追加せず、まず1つの回復・準備手段と受入条件だけを定めます。探索前に準備し、戦闘後に限定的に回復する方式を有力候補として比較します。",
       "links": [
         {
           "label": "判断の根拠",
@@ -223,8 +216,8 @@
       ]
     },
     {
-      "title": "残るHuman Verificationを進める",
-      "summary": "作戦型Utility AIの行動差と、第1層の進行が次の目標として伝わるかを実プレイで確認します。",
+      "title": "複数戦闘が成立するかHuman Verificationする",
+      "summary": "継戦手段のPrototype後、同程度の育成状態で短期・中期・長期探索を比較し、2戦目が実質的な終了条件ではなくなったか、HP / MPのどちらがボトルネックかを確認します。",
       "links": [
         {
           "label": "Prototypeを開く",
@@ -233,12 +226,12 @@
       ]
     },
     {
-      "title": "設計判断の理由を残す方法を整える",
-      "summary": "仕様書を肥大化させず、重要な判断理由を後から追える軽量な記録方法を検討します。",
+      "title": "第1層の正式ボス戦へ進むか判断する",
+      "summary": "継戦性が最低限成立した後、現在の検証用撃破ボタンをゴブリン・ウォーロードとの実戦闘へ置き換え、第1層のゲームループを通す段階へ進むか判断します。",
       "links": [
         {
-          "label": "Issue #83",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/83"
+          "label": "ボス未決事項",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/OPEN_QUESTIONS.md#6-p2ボス攻略に関する未決事項"
         }
       ]
     }
