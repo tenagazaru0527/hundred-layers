@@ -8,6 +8,7 @@
 - `GAME_DESIGN.md`：ゲーム全体設計と確定度
 - `PROTOTYPE.md`：現在のPrototype範囲・実装仮定・検証対象
 - `OPEN_QUESTIONS.md`：未決事項
+- `DECISIONS.md`：主要判断の理由・比較した方向・再検討条件を示す索引（SSOTではない）
 
 ## テーマ別ルーティング
 
@@ -30,6 +31,16 @@
 | シーズン / 世界リセット | `GAME_DESIGN.md`「14. 世界終了・リセット」 | `GAME_CONCEPT.md`「9. 世界の終了と再スタート」 | `OPEN_QUESTIONS.md`「10. P2：100層・世界終了・シーズンに関する未決事項」 |
 | 課金 | `GAME_CONCEPT.md`「2.1 基本無料で遊べること」 | `GAME_DESIGN.md`「3. プレイヤー行動の基本思想」 | `OPEN_QUESTIONS.md`「11. P2：基本無料・収益化に関する未決事項」 |
 | UI / 情報表示 / 情報優先順位 | `GAME_DESIGN.md`「25. UI・情報表示の優先順位」 | `PROTOTYPE.md`「3. 現在成立している最小構成」「4. プレイヤーが行うこと」「15.4 通常画面のUI構造」「15.5 UI構造と状態モデルの差分」 | 他システムの仕様へ影響する場合のみ、そのテーマの関連箇所を追加確認 |
+
+## Decision Logの確認・更新
+
+- 現在の仕様や確定度を知りたい場合は、上表が示すSSOTを確認する
+- 判断理由を知りたい場合は `DECISIONS.md` から関連Decisionを探し、そこに記載されたSSOT、Issue、Pull Requestを確認する
+- Decisionを追加する場合も、先に上表でテーマを特定し、関連するSSOTと直接の根拠だけを確認する
+- `DECISIONS.md` の記載だけを根拠に、未決事項を正式採用へ昇格させない
+- 判断が変わった場合は旧Decisionを削除せず、新しいDecisionから変更元と理由を参照する
+
+GitHub Pagesの `status.html` は「現在どうなっているか」を示す手動更新スナップショットであり、`DECISIONS.md` は「なぜそう判断したか」を示す。どちらも仕様本文のSSOTにはしない。
 
 ## ルーティング確認例
 
