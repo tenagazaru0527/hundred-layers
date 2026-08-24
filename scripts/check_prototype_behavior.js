@@ -1,65 +1,13 @@
 #!/usr/bin/env node
 "use strict";
 /**
- * prototype.html のインラインスクリプトを Node の vm 上で実行し、
- * 暦とスタミナの振る舞いを固定時刻で検証する最小テストである。
- *
- * 単一HTMLのままブラウザ以外で検証するため、DOM と localStorage は最小限のスタブを与え、
- * トップレベルの const / let を取り出すためのエピローグを連結して実行する。
+ * prototype.html の振る舞いを Node の vm 上で検証する最小テストである。
+ * DOM / localStorage スタブとスクリプト読み込みは prototype_harness.js と共有する。
  */
 
 const fs = require("fs");
 const path = require("path");
-const vm = require("vm");
-
-const EXPORTS = [
-  "CONFIG", "state", "worldState", "calendarParts", "accruedStamina", "currentStamina",
-  "spendStamina", "formatStamina", "migrateStaminaSpent", "explore", "load", "save", "render",
-  "move", "setLocationAction", "locationAction", "defaultLocationAction",
-  "attributeTotal", "resistanceTotal", "baseDamage", "actionDamage", "simulateUtility",
-  "abilityLevel", "canRaiseAbility", "raiseAbility", "actionsFor", "validTactics", "gainExp",
-  "runBattle", "rest", "battleHtml",
-  "normalizeStrategy", "strategyDef", "simulatePlayerStrategy", "choosePlayerAction",
-  "initialWorld", "normalizeWorld", "saveWorld", "addWorldProgress", "applyWorldUnlocks",
-  "unlockLocation", "unlockBoss", "defeatBoss", "challengeBoss", "worldQuest",
-  "locationDef", "locationUnlocked", "locationProgress", "locationComplete",
-  "locationContent", "encounterPool", "enemyDef", "eventText",
-  "debug", "debugBattle", "debugRestore", "summaryText", "writeBattleTurns",
-];
-
-function loadPrototype(file, storeSeed) {
-  const source = fs.readFileSync(file, "utf8");
-  const script = source.split("<script>")[1].split("</script>")[0];
-  const elements = {};
-  const makeEl = (id) => {
-    if (elements[id]) return elements[id];
-    const el = {
-      id, textContent: "", innerHTML: "", valueAsNumber: 50, hidden: false, disabled: false,
-      style: {}, dataset: {}, classList: { toggle() {}, add() {}, remove() {}, contains: () => false },
-      setAttribute() {}, scrollIntoView() {}, addEventListener() {},
-      querySelector: () => makeEl("_q"), querySelectorAll: () => [],
-    };
-    elements[id] = el;
-    return el;
-  };
-  const store = Object.assign({}, storeSeed);
-  const context = {
-    console, Math, Date, JSON, Number, String, Object, Array, Boolean, Set, Map, Error,
-    setInterval: () => 0, clearTimeout() {}, setTimeout: () => 0, confirm: () => true,
-    localStorage: {
-      getItem: (key) => (key in store ? store[key] : null),
-      setItem: (key, value) => { store[key] = String(value); },
-      removeItem: (key) => { delete store[key]; },
-    },
-    document: { getElementById: makeEl, addEventListener() {}, querySelector: () => makeEl("_q"), querySelectorAll: () => [] },
-    window: {},
-  };
-  context.globalThis = context;
-  vm.createContext(context);
-  const epilogue = `;globalThis.__api={${EXPORTS.map((name) => `get ${name}(){return ${name}}`).join(",")}};`;
-  vm.runInContext(script + epilogue, context, { filename: file });
-  return { api: context.__api, elements, store };
-}
+const { loadPrototype } = require("./prototype_harness");
 
 const failures = [];
 function check(label, condition, detail) {
@@ -897,8 +845,12 @@ equal("サマリー: 戦闘回数が探索イベントと一致",
 equal("サマリー: 探索開始時のHP / MP", `${summary.startHp},${summary.startMp}`, `${startHp},${startMp}`);
 equal("サマリー: 探索終了時のHP / MP",
   `${summary.endHp},${summary.endMp}`, `${endurance.api.state.currentHp},${endurance.api.state.currentMp}`);
-equal("サマリー: HP0中断の有無と処理イベント数が整合する",
-  summary.interrupted, summary.endHp <= 0 && summary.events < summary.plannedEvents);
+// Issue #87で中断理由がHP0と満腹度不足の2種になったため、中断の有無は処理イベント数で判定する
+equal("サマリー: 中断の有無と処理イベント数が整合する",
+  summary.interrupted, summary.events < summary.plannedEvents);
+equal("サマリー: 満腹度不足による中断を区別して記録する",
+  summary.satietyInterrupted,
+  endurance.api.state.lastResult.events.some((event) => event.recovery && !event.recovery.full));
 check("サマリー: システムログへサマリー行を出す",
   endurance.api.state.systemLog.some((entry) => /探索サマリー：/.test(entry.message)),
   JSON.stringify(endurance.api.state.systemLog.slice(0, 3)));
@@ -917,6 +869,204 @@ legacyResult.api.render();
 check("サマリー: summaryのない旧履歴でも描画できる",
   legacyResult.elements.history.innerHTML.includes("アルンの森")
   && /継戦性サマリー/.test(legacyResult.elements.history.innerHTML) === false);
+
+/* ---------- 満腹度（Issue #87 / PROTOTYPE ASSUMPTION） ---------- */
+const maxMp = CONFIG.battle.player.maxMp;
+const satietyMax = (maxHp + maxMp) * CONFIG.satiety.multiplier;
+equal("満腹度: 最大満腹度は (最大HP + 最大MP) × 10", api.maxSatiety(), satietyMax);
+equal("満腹度: 倍率はPrototype仮値の10", CONFIG.satiety.multiplier, 10);
+
+// state / save
+const fresh = loadPrototype(file, {});
+equal("満腹度: 新規stateは最大値から始まる", fresh.api.state.satiety, satietyMax);
+fresh.api.render();
+equal("満腹度: 冒険者情報へ現在／最大を表示する", fresh.elements.satiety.textContent, `${satietyMax} / ${satietyMax}`);
+
+const noSatiety = loadPrototype(file, { [CONFIG.storageKey]: JSON.stringify({ gold: 55, currentHp: 40, currentMp: 10 }) });
+equal("満腹度: 満腹度のない旧セーブは最大値で補完する", noSatiety.api.state.satiety, satietyMax);
+equal("満腹度: 旧セーブの他の状態は保持する", `${noSatiety.api.state.gold},${noSatiety.api.state.currentHp}`, "55,40");
+
+const savedSatiety = loadPrototype(file, {});
+savedSatiety.api.state.satiety = 1234;
+savedSatiety.api.save();
+equal("満腹度: localStorageへ保存する", JSON.parse(savedSatiety.store[CONFIG.storageKey]).satiety, 1234);
+equal("満腹度: 保存値から復元する", loadPrototype(file, savedSatiety.store).api.state.satiety, 1234);
+equal("満腹度: 負数のセーブ値は保持しない",
+  loadPrototype(file, { [CONFIG.storageKey]: JSON.stringify({ satiety: -50 }) }).api.state.satiety >= 0, true);
+equal("満腹度: 最大値を超えるセーブ値は最大値へ丸める",
+  loadPrototype(file, { [CONFIG.storageKey]: JSON.stringify({ satiety: satietyMax + 500 }) }).api.state.satiety, satietyMax);
+
+// 戦闘後回復の計算（決定論）
+const recovery = loadPrototype(file, {});
+function planFrom(hp, mp, satiety) {
+  recovery.api.state.currentHp = hp;
+  recovery.api.state.currentMp = mp;
+  recovery.api.state.satiety = satiety;
+  return recovery.api.applySatietyRecovery();
+}
+const enough = planFrom(maxHp - 40, maxMp - 30, satietyMax);
+equal("戦闘後回復: 満腹度十分ならHP / MPを全回復する",
+  `${recovery.api.state.currentHp},${recovery.api.state.currentMp}`, `${maxHp},${maxMp}`);
+equal("戦闘後回復: 消費満腹度 = HP回復量 + MP回復量", enough.used, enough.hp + enough.mp);
+equal("戦闘後回復: 必要満腹度 = 不足HP + 不足MP", enough.need, 70);
+equal("戦闘後回復: 満腹度は消費分だけ減る", recovery.api.state.satiety, satietyMax - 70);
+equal("戦闘後回復: 全回復できたことを記録する", enough.full, true);
+
+const hpOnly = planFrom(maxHp - 25, maxMp, satietyMax);
+equal("戦闘後回復: HPのみ不足", `${hpOnly.hp},${hpOnly.mp},${hpOnly.used}`, "25,0,25");
+const mpOnly = planFrom(maxHp, maxMp - 12, satietyMax);
+equal("戦闘後回復: MPのみ不足", `${mpOnly.hp},${mpOnly.mp},${mpOnly.used}`, "0,12,12");
+const bothFull = planFrom(maxHp, maxMp, satietyMax);
+equal("戦闘後回復: HP / MPが満タンなら何も消費しない", `${bothFull.used},${bothFull.full}`, "0,true");
+
+// 満腹度不足時の比例配分
+const partial = planFrom(maxHp - 40, maxMp - 30, 35);
+equal("満腹度不足: 不足HP : 不足MPで比例配分する", `${partial.hp},${partial.mp}`, "20,15");
+equal("満腹度不足: 回復量合計が使用満腹度を超えない", partial.hp + partial.mp, partial.used);
+equal("満腹度不足: 満腹度を使い切る", recovery.api.state.satiety, 0);
+equal("満腹度不足: 全回復できなかったことを記録する", partial.full, false);
+check("満腹度不足: HP / MPが最大値を超えない",
+  recovery.api.state.currentHp <= maxHp && recovery.api.state.currentMp <= maxMp);
+
+const fractional = planFrom(maxHp - 10, maxMp - 5, 7);
+equal("満腹度不足: 端数条件でも回復量合計が満腹度を超えない", fractional.hp + fractional.mp, 7);
+equal("満腹度不足: 端数処理は決定論（HP切り捨て・余りをMPへ）", `${fractional.hp},${fractional.mp}`, "4,3");
+const empty = planFrom(maxHp - 10, maxMp - 5, 0);
+equal("満腹度不足: 満腹度0では回復しない", `${empty.hp},${empty.mp},${empty.used}`, "0,0,0");
+equal("満腹度不足: 満腹度は0未満にならない", recovery.api.state.satiety, 0);
+equal("満腹度不足: 消費量は満腹度残量で頭打ちになる", recovery.api.consumeSatiety(999), 0);
+
+// スタミナ消費 → 満腹度消費
+const staminaRun = loadPrototype(file, {});
+staminaRun.api.state.location = "forest";
+staminaRun.api.debug("restore");
+const staminaStart = staminaRun.api.state.satiety;
+staminaRun.api.explore(30);
+const staminaSummary = staminaRun.api.state.lastResult.summary;
+equal("スタミナ: 投入スタミナ1につき満腹度1を消費する", staminaSummary.staminaSatiety, 30);
+equal("スタミナ: 開始時満腹度を記録する", staminaSummary.startSatiety, staminaStart);
+equal("スタミナ: 満腹度の増減がスタミナ由来と戦闘後回復由来の合計と一致する",
+  staminaSummary.startSatiety - staminaSummary.endSatiety,
+  staminaSummary.staminaSatiety + staminaSummary.recoverySatiety);
+equal("スタミナ: 終了時満腹度がstateと一致する", staminaSummary.endSatiety, staminaRun.api.state.satiety);
+equal("スタミナ: 投入スタミナは全量コミットする", staminaRun.api.state.staminaSpent, 30);
+equal("サマリー: 最大満腹度を記録する", staminaSummary.maxSatiety, satietyMax);
+check("サマリー: システムログへ満腹度を含むサマリー行を出す",
+  staminaRun.api.state.systemLog.some((entry) => /探索サマリー：/.test(entry.message) && /満腹度/.test(entry.message)));
+staminaRun.api.render();
+check("サマリー: 探索結果パネルへ満腹度の内訳を表示する",
+  /満腹度消費：スタミナ/.test(staminaRun.elements.screen.innerHTML));
+
+// 満腹度不足による中断と、投入スタミナの非返却
+const shortage = loadPrototype(file, {});
+shortage.api.state.location = "forest";
+let shortageSummary = null;
+let shortageEvent = null;
+for (let i = 0; i < 60 && !shortageEvent; i += 1) {
+  shortage.api.debug("restore");
+  shortage.api.state.satiety = 0;
+  shortage.api.state.staminaSpent = 0;
+  shortage.api.explore(50);
+  const result = shortage.api.state.lastResult;
+  shortageEvent = result.events.find((event) => event.recovery && event.recovery.need > 0) || null;
+  if (shortageEvent) shortageSummary = result.summary;
+}
+check("満腹度不足: 満腹度0で戦闘すると部分回復になる状況を再現できる", Boolean(shortageEvent));
+if (shortageEvent && shortageSummary) {
+  equal("満腹度不足: 満腹度0では回復できない", shortageEvent.recovery.used, 0);
+  equal("満腹度不足: 全回復できないため探索を中断する", shortageSummary.satietyInterrupted, true);
+  equal("満腹度不足: 中断として記録する", shortageSummary.interrupted, true);
+  equal("満腹度不足: 中断しても投入スタミナは返却しない", shortage.api.state.staminaSpent, 50);
+  check("満腹度不足: 未処理イベントが残る", shortageSummary.events < shortageSummary.plannedEvents,
+    JSON.stringify(shortageSummary));
+  check("満腹度不足: 中断理由をログへ残す",
+    shortage.api.state.systemLog.some((entry) => /満腹度が不足しHP \/ MPを最大まで回復できなかったため、探索を中断した。/.test(entry.message)));
+  check("満腹度不足: 探索結果へ戦闘後回復の内訳を残す",
+    Number.isFinite(shortageEvent.recovery.hpNeed) && Number.isFinite(shortageEvent.recovery.mpNeed)
+    && Number.isFinite(shortageEvent.recovery.before) && Number.isFinite(shortageEvent.recovery.after));
+}
+
+// 敗北の扱いと、満腹度十分な場合の続行
+const battles = loadPrototype(file, {});
+battles.api.state.location = "forest";
+let defeatEvent = null;
+let defeatContinued = false;
+let recoveredAndContinued = false;
+for (let i = 0; i < 80; i += 1) {
+  battles.api.debug("restore");
+  battles.api.state.satiety = satietyMax;
+  battles.api.state.staminaSpent = 0;
+  battles.api.state.currentHp = 20;
+  battles.api.explore(50);
+  const result = battles.api.state.lastResult;
+  result.events.forEach((event, index) => {
+    if (!event.battle) return;
+    if (event.battle.result !== "victory") {
+      defeatEvent = defeatEvent || event;
+      if (index < result.events.length - 1) defeatContinued = true;
+    }
+    if (event.recovery && event.recovery.used > 0 && index < result.events.length - 1) recoveredAndContinued = true;
+  });
+  check("戦闘後回復: 満腹度が十分なら戦闘後にHP / MPが最大へ戻る",
+    result.events.every((event) => !event.recovery || !event.recovery.full
+      || (event.recovery.hp === event.recovery.hpNeed && event.recovery.mp === event.recovery.mpNeed)));
+  check("戦闘後回復: 満腹度は0未満にならない", battles.api.state.satiety >= 0);
+  equal("サマリー: 満腹度不足による中断と部分回復が整合する",
+    result.summary.satietyInterrupted,
+    result.events.some((event) => event.recovery && !event.recovery.full));
+  equal("サマリー: 戦闘後回復由来の消費が実際の回復量合計と一致する",
+    result.summary.recoverySatiety,
+    result.events.reduce((total, event) => total + (event.recovery ? event.recovery.used : 0), 0));
+  equal("サマリー: 中断の有無と未処理イベントが整合する",
+    result.summary.interrupted, result.summary.events < result.summary.plannedEvents);
+}
+check("敗北: 探索中に敗北が発生する状況を再現できる", Boolean(defeatEvent));
+if (defeatEvent) {
+  check("敗北: 勝利相当のEXP / 戦利品 / 探索進行を与えない",
+    !defeatEvent.reward && !defeatEvent.material && !defeatEvent.growth && (defeatEvent.gain || 0) === 0,
+    JSON.stringify({ reward: defeatEvent.reward, material: defeatEvent.material, growth: defeatEvent.growth, gain: defeatEvent.gain }));
+  check("敗北: 敗北後も満腹度による戦闘後回復を行う", Boolean(defeatEvent.recovery));
+}
+check("敗北: 満腹度が十分なら敗北後も探索を続行できる", defeatContinued);
+check("戦闘後回復: 全回復できた戦闘の後は探索を続行する", recoveredAndContinued);
+
+// 強敵直接テストとの分離（Issue #87 §8）
+const direct = loadPrototype(file, {});
+direct.api.debug("restore");
+direct.api.state.currentHp = Math.floor(maxHp / 2);
+direct.api.state.currentMp = Math.floor(maxMp / 2);
+direct.api.state.satiety = satietyMax;
+const beforeDirectHp = direct.api.state.currentHp;
+direct.api.debugBattle("alphaWolf");
+equal("強敵直接テスト: 満腹度を消費しない", direct.api.state.satiety, satietyMax);
+check("強敵直接テスト: 戦闘後回復でHPが最大へ戻らない",
+  direct.api.state.currentHp <= beforeDirectHp,
+  `before=${beforeDirectHp}, after=${direct.api.state.currentHp}`);
+direct.api.debug("restore");
+equal("強敵直接テスト: デバッグ全回復は満腹度を変えない", direct.api.state.satiety, satietyMax);
+
+// 街の検証用補給（Issue #87 §9）
+const supply = loadPrototype(file, {});
+supply.api.state.satiety = 10;
+supply.api.state.currentHp = 1;
+supply.api.state.currentMp = 1;
+supply.api.state.location = "forest";
+supply.api.supplySatiety();
+equal("補給: 街の外では補給できない", supply.api.state.satiety, 10);
+supply.api.state.location = "town";
+supply.api.supplySatiety();
+equal("補給: 街で満腹度を最大まで戻せる", supply.api.state.satiety, satietyMax);
+equal("補給: 補給はHP / MPを回復しない", `${supply.api.state.currentHp},${supply.api.state.currentMp}`, "1,1");
+check("補給: 検証用であることをログへ残す",
+  supply.api.state.systemLog.some((entry) => /検証用の補給で満腹度を回復した。/.test(entry.message)));
+supply.api.render();
+check("補給: 街の画面へ検証用補給の導線がある",
+  /満腹度を補給（検証用）/.test(supply.elements.screen.innerHTML), supply.elements.screen.innerHTML.slice(0, 200));
+supply.api.state.satiety = 100;
+supply.api.rest();
+equal("補給: 宿屋は満腹度を回復しない", supply.api.state.satiety, 100);
+equal("補給: 宿屋のHP / MP回復は従来どおり",
+  `${supply.api.state.currentHp},${supply.api.state.currentMp}`, `${maxHp},${maxMp}`);
 
 /* ---------- 旧セーブからの移行 ---------- */
 const now = Date.now();
