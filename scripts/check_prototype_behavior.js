@@ -1068,6 +1068,116 @@ equal("補給: 宿屋は満腹度を回復しない", supply.api.state.satiety, 
 equal("補給: 宿屋のHP / MP回復は従来どおり",
   `${supply.api.state.currentHp},${supply.api.state.currentMp}`, `${maxHp},${maxMp}`);
 
+/* ---------- 探索結果UI（Issue #91 / PROTOTYPE ASSUMPTION） ---------- */
+// 集約は表示専用であり、報酬・成長・世界進行のロジックは変更しない
+const gainsUnit = loadPrototype(file, {});
+const emptyGains = gainsUnit.api.aggregateGains([]);
+equal("成果集約: 何も得ていない探索では獲得を作らない",
+  `${emptyGains.items.length},${emptyGains.exp},${emptyGains.levels}`, "0,0,0");
+const sampleGains = gainsUnit.api.aggregateGains([
+  { item: "薬草", itemAmount: 1 },
+  { reward: { item: "薬草", amount: 1 }, material: { item: "狼の毛皮", amount: 1 }, growth: { exp: 6, levels: 0, before: 1, level: 1 } },
+  { reward: { item: null, amount: 0 }, material: { item: "狼の毛皮", amount: 1 }, growth: { exp: 12, levels: 1, before: 1, level: 2 } },
+  { growth: { exp: 5, levels: 2, before: 2, level: 4 } },
+]);
+equal("成果集約: 同一アイテムを合算する",
+  sampleGains.items.map((entry) => `${entry.item}×${entry.amount}`).join(","), "薬草×2,狼の毛皮×2");
+equal("成果集約: EXPを合計する", sampleGains.exp, 23);
+equal("成果集約: LvUPの開始Lvと到達Lvを集約する", `${sampleGains.before}→${sampleGains.level}`, "1→4");
+equal("成果集約: LvUP回数からSP / APを集約する",
+  `${sampleGains.levels},${sampleGains.sp},${sampleGains.ap}`,
+  `3,${3 * CONFIG.growth.parameterPointsPerLevel},${3 * CONFIG.growth.skillPointsPerLevel}`);
+equal("成果集約: 獲得のないアイテム抽選は集約しない",
+  sampleGains.items.some((entry) => entry.item === null), false);
+
+// 実際の探索結果と、所持品・EXP・SP / APの増加が一致すること（回帰確認）
+const resultRun = loadPrototype(file, {});
+resultRun.api.state.location = "forest";
+for (let i = 0; i < 30; i += 1) {
+  resultRun.api.debug("restore");
+  resultRun.api.state.satiety = satietyMax;
+  resultRun.api.state.staminaSpent = 0;
+  const itemsBefore = JSON.parse(JSON.stringify(resultRun.api.state.items));
+  const levelBefore = resultRun.api.state.level;
+  const spBefore = resultRun.api.state.parameterPoints;
+  const apBefore = resultRun.api.state.skillPoints;
+  resultRun.api.explore(50);
+  const result = resultRun.api.state.lastResult;
+  const gains = resultRun.api.aggregateGains(result.events);
+  const diff = {};
+  for (const [item, count] of Object.entries(resultRun.api.state.items)) {
+    const delta = count - (itemsBefore[item] || 0);
+    if (delta > 0) diff[item] = delta;
+  }
+  const asList = (table) => Object.keys(table).sort().map((item) => `${item}×${table[item]}`).join(",");
+  equal("成果集約: 集約した獲得アイテムが所持品の増加と一致する",
+    asList(Object.fromEntries(gains.items.map((entry) => [entry.item, entry.amount]))), asList(diff));
+  equal("成果集約: 集約したEXPが各戦闘のEXP合計と一致する",
+    gains.exp, result.events.reduce((total, event) => total + (event.growth ? event.growth.exp : 0), 0));
+  equal("成果集約: 集約したSP / APが実際の増加と一致する",
+    `${gains.sp},${gains.ap}`, `${resultRun.api.state.parameterPoints - spBefore},${resultRun.api.state.skillPoints - apBefore}`);
+  equal("成果集約: LvUPがない探索ではレベル変化を表示しない",
+    gains.levels > 0, resultRun.api.state.level > levelBefore);
+  if (gains.levels > 0) {
+    equal("成果集約: 到達Lvが現在のLvと一致する", gains.level, resultRun.api.state.level);
+    equal("成果集約: 開始Lvが探索前のLvと一致する", gains.before, levelBefore);
+  }
+}
+
+// 表示構造
+resultRun.api.render();
+const resultScreen = resultRun.elements.screen.innerHTML;
+check("探索結果: 主な成果を先頭へ表示する", /今回の主な成果/.test(resultScreen));
+check("探索結果: 獲得・成長・世界進行の区分を持つ", /獲得/.test(resultScreen) && /世界進行/.test(resultScreen));
+check("探索結果: 踏破率の開始値 → 終了値をサマリーへ表示する",
+  new RegExp(`${resultRun.api.state.lastResult.worldBefore}% → ${resultRun.api.state.lastResult.worldAfter}%`).test(resultScreen));
+check("探索結果: 主な成果はイベント詳細より前にある",
+  resultScreen.indexOf("今回の主な成果") < resultScreen.indexOf("探索イベントの詳細"), String(resultScreen.indexOf("今回の主な成果")));
+check("探索結果: イベント詳細を残す", /探索イベントの詳細/.test(resultScreen) && /class="event"/.test(resultScreen));
+check("探索結果: 継戦性サマリーを残す", /継戦性サマリー/.test(resultScreen) && /満腹度/.test(resultScreen));
+check("探索結果: 継戦情報への短い導線を主な成果へ置く", /gains-note/.test(resultScreen));
+
+// 戦闘ターン詳細は初期状態で閉じる（勝敗を問わず到達できる）
+const foldRun = loadPrototype(file, {});
+const foldDummy = {
+  id: "foldDummy", name: "検証用の敵", maxHp: 1, exp: 1, probability: 1,
+  material: { item: "薬草", amount: 1 }, stats: { STR: 1, VIT: 1, DEX: 1, AGI: 1, INT: 1, MND: 1 },
+  actions: [{ name: "体当たり", probability: 1, kind: "physical", attributes: { blunt: 0.1 } }],
+  resistances: { physical: { slash: 0, pierce: 0, blunt: 0 }, magic: {} },
+};
+const foldHtml = foldRun.api.battleHtml(foldRun.api.runBattle([foldDummy]));
+check("戦闘ログ: ターン詳細は初期状態で閉じている", /<details class="battle-log">/.test(foldHtml), foldHtml.slice(0, 120));
+check("戦闘ログ: 展開できることが分かる表示を出す", /戦闘詳細を見る/.test(foldHtml));
+check("戦闘ログ: 折りたたんでも勝敗は分かる", /オートバトル：(勝利|敗北)/.test(foldHtml));
+check("戦闘ログ: ターンログと戦闘終了時HP / MPは展開すれば確認できる",
+  /ターン：プレイヤー/.test(foldHtml) && /戦闘終了：プレイヤー HP/.test(foldHtml));
+const defeatHtml = foldRun.api.battleHtml({
+  enemyName: "検証用の敵", enemyMaxHp: 100, enemyHp: 40, result: "defeat", strategyName: "バランス",
+  playerHp: 0, playerMp: 0,
+  turns: [{ turn: 1, playerAction: "通常攻撃", playerDamage: 10, playerCritical: false, enemyAction: "体当たり", enemyDamage: 130, enemyCritical: false, playerHp: 0, playerMp: 0, healed: 0, mpSpent: 0 }],
+});
+check("戦闘ログ: 敗北時も同じ折りたたみで詳細へ到達できる",
+  /<details class="battle-log">/.test(defeatHtml) && /ターン：プレイヤー/.test(defeatHtml));
+
+// 旧セーブの探索結果（アイテム情報なし）でも描画できる
+const legacyGains = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({
+    location: "forest",
+    lastResult: {
+      cost: 10, location: "forest", locationName: "アルンの森", before: 0, after: 4,
+      worldBefore: 0, worldAfter: 4, worldTotal: 4,
+      events: [{ type: "深度進行", gain: 4, worldGain: 4, text: "古い形式のイベント" }],
+    },
+  }),
+});
+legacyGains.api.render();
+check("探索結果: 旧形式の探索結果でも主な成果を描画できる",
+  /今回の主な成果/.test(legacyGains.elements.screen.innerHTML)
+  && /獲得なし/.test(legacyGains.elements.screen.innerHTML),
+  legacyGains.elements.screen.innerHTML.slice(0, 200));
+check("探索結果: 継戦性サマリーのない旧結果では検証情報を出さない",
+  /継戦性サマリー/.test(legacyGains.elements.screen.innerHTML) === false);
+
 /* ---------- 旧セーブからの移行 ---------- */
 const now = Date.now();
 const legacy = {
