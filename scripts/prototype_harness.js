@@ -26,6 +26,7 @@ const EXPORTS = [
   "debug", "debugBattle", "debugRestore", "summaryText", "writeBattleTurns",
   "maxSatiety", "normalizeSatiety", "consumeSatiety", "planSatietyRecovery",
   "applySatietyRecovery", "supplySatiety", "satietyLogText",
+  "aggregateGains", "gainsHtml", "resultHtml",
 ];
 
 function loadPrototype(file, storeSeed) {
