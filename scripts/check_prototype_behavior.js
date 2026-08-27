@@ -845,9 +845,10 @@ equal("サマリー: 戦闘回数が探索イベントと一致",
 equal("サマリー: 探索開始時のHP / MP", `${summary.startHp},${summary.startMp}`, `${startHp},${startMp}`);
 equal("サマリー: 探索終了時のHP / MP",
   `${summary.endHp},${summary.endMp}`, `${endurance.api.state.currentHp},${endurance.api.state.currentMp}`);
-// Issue #87で中断理由がHP0と満腹度不足の2種になったため、中断の有無は処理イベント数で判定する
-equal("サマリー: 中断の有無と処理イベント数が整合する",
-  summary.interrupted, summary.events < summary.plannedEvents);
+// interruptedは停止条件の成立を表す。満腹度不足は最終イベントの回復後にも成立するため、
+// satietyInterrupted=trueとevents=plannedEventsは両立する（Issue #97）。
+equal("サマリー: 中断の有無と未処理イベント・満腹度不足が整合する",
+  summary.interrupted, summary.events < summary.plannedEvents || summary.satietyInterrupted);
 equal("サマリー: 満腹度不足による中断を区別して記録する",
   summary.satietyInterrupted,
   endurance.api.state.lastResult.events.some((event) => event.recovery && !event.recovery.full));
@@ -957,33 +958,76 @@ staminaRun.api.render();
 check("サマリー: 探索結果パネルへ満腹度の内訳を表示する",
   /満腹度消費：スタミナ/.test(staminaRun.elements.screen.innerHTML));
 
-// 満腹度不足による中断と、投入スタミナの非返却
-const shortage = loadPrototype(file, {});
-shortage.api.state.location = "forest";
-let shortageSummary = null;
-let shortageEvent = null;
-for (let i = 0; i < 60 && !shortageEvent; i += 1) {
-  shortage.api.debug("restore");
-  shortage.api.state.satiety = 0;
-  shortage.api.state.staminaSpent = 0;
-  shortage.api.explore(50);
-  const result = shortage.api.state.lastResult;
-  shortageEvent = result.events.find((event) => event.recovery && event.recovery.need > 0) || null;
-  if (shortageEvent) shortageSummary = result.summary;
+// 満腹度不足による中断と、投入スタミナの非返却（Issue #97、決定論）
+// 戦闘までは追加抽選のない「深度進行」を選び、指定したイベントで実際の戦闘・回復を行う。
+// 以降の戦闘内抽選も固定する。ハーネス共有のMath.randomは必ず元へ戻す。
+function controlledSatietyExploration(plannedEvents, battleEvent, satiety, battleRoll = 0.5) {
+  const instance = loadPrototype(file, {});
+  instance.api.state.location = "forest";
+  instance.api.state.satiety = satiety;
+  const events = instance.api.locationContent("forest").explorationEvents;
+  function eventRoll(id) {
+    const index = events.findIndex((event) => event.id === id);
+    if (index < 0) throw new Error(`テスト用イベントが見つからない: ${id}`);
+    return events.slice(0, index).reduce((total, event) => total + event.probability, 0)
+      + events[index].probability / 2;
+  }
+  const rolls = Array.from({ length: Math.min(battleEvent, plannedEvents) }, (_, index) =>
+    eventRoll(index + 1 === battleEvent ? "battle" : "advance"));
+  const originalRandom = Math.random;
+  try {
+    Math.random = () => rolls.length ? rolls.shift() : battleRoll;
+    instance.api.explore(plannedEvents * instance.api.CONFIG.exploration.staminaPerEvent);
+  } finally {
+    Math.random = originalRandom;
+  }
+  return instance;
 }
-check("満腹度不足: 満腹度0で戦闘すると部分回復になる状況を再現できる", Boolean(shortageEvent));
-if (shortageEvent && shortageSummary) {
-  equal("満腹度不足: 満腹度0では回復できない", shortageEvent.recovery.used, 0);
-  equal("満腹度不足: 全回復できないため探索を中断する", shortageSummary.satietyInterrupted, true);
-  equal("満腹度不足: 中断として記録する", shortageSummary.interrupted, true);
-  equal("満腹度不足: 中断しても投入スタミナは返却しない", shortage.api.state.staminaSpent, 50);
-  check("満腹度不足: 未処理イベントが残る", shortageSummary.events < shortageSummary.plannedEvents,
-    JSON.stringify(shortageSummary));
-  check("満腹度不足: 中断理由をログへ残す",
+
+// 最終イベントは勝利・敗北の両方を検証する。0.1は狼に勝利、0.5は猪に敗北する抽選。
+for (const [plannedEvents, battleEvent, battleRoll] of [[5, 1, 0.5], [5, 3, 0.5], [5, 5, 0.5], [1, 1, 0.5], [5, 5, 0.1]]) {
+  const label = `満腹度不足（${battleEvent}/${plannedEvents}回目、抽選${battleRoll}）`;
+  const shortage = controlledSatietyExploration(plannedEvents, battleEvent, 0, battleRoll);
+  const result = shortage.api.state.lastResult;
+  const shortageSummary = result.summary;
+  const shortageEvent = result.events[battleEvent - 1];
+  equal(`${label}: 予定イベント数を保持する`, shortageSummary.plannedEvents, plannedEvents);
+  equal(`${label}: 不足を起こしたイベントまで処理済みとする`, shortageSummary.events, battleEvent);
+  equal(`${label}: イベント配列と処理数が一致する`, result.events.length, shortageSummary.events);
+  equal(`${label}: 戦闘は指定イベントの1回だけ`, shortageSummary.battles, 1);
+  equal(`${label}: 予定した勝敗を再現する`, shortageEvent?.battle?.result, battleRoll === 0.1 ? "victory" : "defeat");
+  check(`${label}: 戦闘後に回復不足が発生する`,
+    Boolean(shortageEvent?.battle && shortageEvent.recovery?.need > 0 && !shortageEvent.recovery.full));
+  equal(`${label}: 全回復できないため探索を中断する`, shortageSummary.satietyInterrupted, true);
+  equal(`${label}: 最終イベントでも停止条件の成立を記録する`, shortageSummary.interrupted, true);
+  equal(`${label}: 中断しても投入スタミナは返却しない`,
+    shortage.api.state.staminaSpent, plannedEvents * CONFIG.exploration.staminaPerEvent);
+  equal(`${label}: 未処理イベントが残るのは最終イベントより前の中断だけ`,
+    shortageSummary.events < shortageSummary.plannedEvents, battleEvent < plannedEvents);
+  check(`${label}: 中断理由をログへ残す`,
     shortage.api.state.systemLog.some((entry) => /満腹度が不足しHP \/ MPを最大まで回復できなかったため、探索を中断した。/.test(entry.message)));
-  check("満腹度不足: 探索結果へ戦闘後回復の内訳を残す",
-    Number.isFinite(shortageEvent.recovery.hpNeed) && Number.isFinite(shortageEvent.recovery.mpNeed)
-    && Number.isFinite(shortageEvent.recovery.before) && Number.isFinite(shortageEvent.recovery.after));
+  check(`${label}: 結果パネルに満腹度不足の中断を表示する`,
+    /満腹度不足により探索を中断しました。/.test(shortage.elements.screen.innerHTML));
+  if (shortageEvent?.recovery) {
+    equal(`${label}: 満腹度0では回復できない`, shortageEvent.recovery.used, 0);
+    check(`${label}: 探索結果へ戦闘後回復の内訳を残す`,
+      Number.isFinite(shortageEvent.recovery.hpNeed) && Number.isFinite(shortageEvent.recovery.mpNeed)
+      && Number.isFinite(shortageEvent.recovery.before) && Number.isFinite(shortageEvent.recovery.after));
+  }
+}
+
+// 対照ケース：同じ最終戦闘でも全回復できれば中断しない。満腹度0だけでも中断しない。
+for (const [label, battleEvent, satiety] of [["最終戦闘で全回復", 5, satietyMax], ["満腹度0で戦闘なし", 6, 0]]) {
+  const normal = controlledSatietyExploration(5, battleEvent, satiety);
+  const result = normal.api.state.lastResult;
+  equal(`${label}: 全予定イベントを処理する`, result.summary.events, 5);
+  equal(`${label}: 予定した戦闘回数と一致する`, result.summary.battles, battleEvent === 5 ? 1 : 0);
+  equal(`${label}: 満腹度不足による中断ではない`, result.summary.satietyInterrupted, false);
+  equal(`${label}: 中断ではない`, result.summary.interrupted, false);
+  if (battleEvent === 5) {
+    check(`${label}: 実際に必要量を回復する`,
+      result.events[4].recovery?.need > 0 && result.events[4].recovery.full);
+  }
 }
 
 // 敗北の扱いと、満腹度十分な場合の続行
@@ -1017,8 +1061,8 @@ for (let i = 0; i < 80; i += 1) {
   equal("サマリー: 戦闘後回復由来の消費が実際の回復量合計と一致する",
     result.summary.recoverySatiety,
     result.events.reduce((total, event) => total + (event.recovery ? event.recovery.used : 0), 0));
-  equal("サマリー: 中断の有無と未処理イベントが整合する",
-    result.summary.interrupted, result.summary.events < result.summary.plannedEvents);
+  equal("サマリー: 中断の有無と未処理イベント・満腹度不足が整合する",
+    result.summary.interrupted, result.summary.events < result.summary.plannedEvents || result.summary.satietyInterrupted);
 }
 check("敗北: 探索中に敗北が発生する状況を再現できる", Boolean(defeatEvent));
 if (defeatEvent) {
