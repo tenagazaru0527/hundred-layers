@@ -27,6 +27,9 @@ const EXPORTS = [
   "maxSatiety", "normalizeSatiety", "consumeSatiety", "planSatietyRecovery",
   "applySatietyRecovery", "supplySatiety", "satietyLogText",
   "aggregateGains", "gainsHtml", "resultHtml",
+  "enhanceConfig", "enhanceLevel", "normalizeEnhancements", "enhancedValue", "equipmentPower",
+  "weaponAtk", "armorDef", "enhanceSuccessRate", "enhanceEquipment", "smithBodyHtml", "playerUnit",
+  "buy", "equip",
 ];
 
 function loadPrototype(file, storeSeed) {

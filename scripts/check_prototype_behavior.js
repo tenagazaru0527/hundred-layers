@@ -1222,6 +1222,192 @@ check("探索結果: 旧形式の探索結果でも主な成果を描画でき�
 check("探索結果: 継戦性サマリーのない旧結果では検証情報を出さない",
   /継戦性サマリー/.test(legacyGains.elements.screen.innerHTML) === false);
 
+/* ---------- 装備強化（Issue #102 / PROTOTYPE ASSUMPTION） ---------- */
+const enhanceCfg = CONFIG.battle.equipment.enhance;
+equal("装備強化: 最大強化値", enhanceCfg.maxLevel, 10);
+equal("装備強化: 1試行あたりのGold費用", enhanceCfg.goldPerAttempt, 1);
+equal("装備強化: 連続鍛錬の選択肢", enhanceCfg.attempts.join(","), "1,10,50,100");
+equal("装備強化: 段階別成功率", enhanceCfg.successRates.join(","), "0.5,0.4,0.3,0.2,0.1,0.05,0.04,0.03,0.02,0.01");
+equal("装備強化: 現在段階の成功率を返す",
+  [0, 4, 9].map((level) => api.enhanceSuccessRate(level)).join(","), "0.5,0.1,0.01");
+equal("装備強化: +10では強化できない", api.enhanceSuccessRate(10), 0);
+equal("装備強化: 実効性能 = round(基礎 × (1 + 強化値 × 0.1))",
+  [0, 1, 5, 10].map((level) => api.enhancedValue(11, level)).join(","), "11,12,17,22");
+equal("装備強化: +10で基礎性能の200%", api.enhancedValue(13, 10), 26);
+
+// 乱数を固定して成功／失敗を決定論的に再現する（Issue #97と同じ方式）
+function withRolls(rolls, fn) {
+  const original = Math.random;
+  const queue = rolls.slice();
+  try {
+    Math.random = () => (queue.length ? queue.shift() : 0.999);
+    return fn();
+  } finally {
+    Math.random = original;
+  }
+}
+function smithInstance(gold = 1000) {
+  const instance = loadPrototype(file, {});
+  instance.api.state.gold = gold;
+  return instance;
+}
+
+// 新規stateと旧セーブ
+const freshSmith = smithInstance();
+equal("装備強化: 新規stateの強化値は+0", JSON.stringify(freshSmith.api.state.enhancements), "{}");
+equal("装備強化: 新規装備の強化値は0", freshSmith.api.enhanceLevel("trainingDagger"), 0);
+const legacySmith = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({
+    gold: 40, ownedEquipment: ["trainingDagger", "travelerClothes", "ironDagger"],
+    equippedWeapon: "ironDagger", equippedArmor: "travelerClothes",
+  }),
+});
+equal("装備強化: 強化情報のない旧セーブは全装備+0として読み込む",
+  ["trainingDagger", "ironDagger", "travelerClothes", "leatherArmor"]
+    .map((id) => legacySmith.api.enhanceLevel(id)).join(","), "0,0,0,0");
+equal("装備強化: 旧セーブの装備所持を失わない", legacySmith.api.state.ownedEquipment.join(","),
+  "trainingDagger,travelerClothes,ironDagger");
+equal("装備強化: 旧セーブの装備中状態を失わない", legacySmith.api.state.equippedWeapon, "ironDagger");
+equal("装備強化: 不正な強化値は保持しない",
+  JSON.stringify(loadPrototype(file, {
+    [CONFIG.storageKey]: JSON.stringify({ enhancements: { trainingDagger: -3, ironDagger: 99, unknownGear: 5, travelerClothes: 1.5 } }),
+  }).api.state.enhancements), JSON.stringify({ ironDagger: 10 }));
+
+// 成功時だけ+1される
+const oneSuccess = smithInstance();
+const successResult = withRolls([0.1], () => oneSuccess.api.enhanceEquipment("weapons", "trainingDagger", 1));
+equal("装備強化: 成功すると強化値が+1される", successResult.level, 1);
+equal("装備強化: 成功数・失敗数を記録する", `${successResult.tries},${successResult.success},${successResult.fail}`, "1,1,0");
+equal("装備強化: 成功時に1試行分Goldを消費する", `${successResult.gold},${oneSuccess.api.state.gold}`, "1,999");
+equal("装備強化: 実効性能の変化を記録する", `${successResult.startValue}→${successResult.value}`, "11→12");
+
+// 失敗しても装備消失・強化値低下がない
+const failRun = smithInstance();
+withRolls([0.1], () => failRun.api.enhanceEquipment("weapons", "trainingDagger", 1));
+const failResult = withRolls([0.9], () => failRun.api.enhanceEquipment("weapons", "trainingDagger", 1));
+equal("装備強化: 失敗しても強化値が下がらない", failResult.level, 1);
+equal("装備強化: 失敗しても装備を失わない",
+  failRun.api.state.ownedEquipment.includes("trainingDagger") && failRun.api.state.equippedWeapon === "trainingDagger", true);
+equal("装備強化: 失敗時も1試行分Goldを消費する", `${failResult.gold},${failRun.api.state.gold}`, "1,998");
+equal("装備強化: 失敗数を記録する", `${failResult.success},${failResult.fail}`, "0,1");
+
+// 連続鍛錬は実行試行分だけGoldを消費する
+const seriesRun = smithInstance();
+// +0→+1（50%）で成功、+1→+2（40%）で失敗2回、+1→+2で成功、+2→+3（30%）で失敗
+const series = withRolls([0.4, 0.5, 0.9, 0.2, 0.9], () => seriesRun.api.enhanceEquipment("weapons", "trainingDagger", 5));
+equal("連続鍛錬: 指定回数を実行する", `${series.tries},${series.attempts}`, "5,5");
+equal("連続鍛錬: 固定乱数で複数成功を再現できる", `${series.start}→${series.level}`, "0→2");
+equal("連続鍛錬: 成功数・失敗数が試行数と一致する", series.success + series.fail, series.tries);
+equal("連続鍛錬: 実行試行分だけGoldを消費する", `${series.gold},${seriesRun.api.state.gold}`, "5,995");
+equal("連続鍛錬: 停止理由は指定回数到達", series.stop, "attempts");
+
+// Gold不足で停止し、先払いしない
+const poorRun = smithInstance(3);
+const poor = withRolls([0.9, 0.9, 0.9, 0.9, 0.9], () => poorRun.api.enhanceEquipment("weapons", "trainingDagger", 10));
+equal("連続鍛錬: Gold不足で停止する", poor.stop, "gold");
+equal("連続鍛錬: 所持Gold分だけ試行する", poor.tries, 3);
+equal("連続鍛錬: Goldを先払いしない", `${poor.gold},${poorRun.api.state.gold}`, "3,0");
+equal("連続鍛錬: Goldが負数にならない", poorRun.api.state.gold >= 0, true);
+
+// +10で自動停止し、+10を超えない
+const maxRun = smithInstance();
+const toMax = withRolls(Array.from({ length: 20 }, () => 0.005),
+  () => maxRun.api.enhanceEquipment("weapons", "trainingDagger", 20));
+equal("連続鍛錬: +10へ到達したら停止する", `${toMax.level},${toMax.stop}`, "10,max");
+equal("連続鍛錬: +10を超えて強化しない", maxRun.api.enhanceLevel("trainingDagger"), enhanceCfg.maxLevel);
+equal("連続鍛錬: +10到達までの試行分だけGoldを消費する", toMax.tries, 10);
+const atMax = withRolls([0.005], () => maxRun.api.enhanceEquipment("weapons", "trainingDagger", 10));
+equal("連続鍛錬: +10装備では試行もGold消費も行わない", `${atMax.tries},${atMax.gold},${atMax.stop}`, "0,0,max");
+equal("装備強化: +10装備の実効ATK", api.enhancedValue(11, 10), 22);
+
+// 保存と再読込
+maxRun.api.save();
+equal("装備強化: 強化値を保存する", JSON.parse(maxRun.store[CONFIG.storageKey]).enhancements.trainingDagger, 10);
+equal("装備強化: 強化値を復元する", loadPrototype(file, maxRun.store).api.enhanceLevel("trainingDagger"), 10);
+
+// 強化を戦闘へ反映する
+const battleRun = smithInstance();
+const enemyUnitDef = {
+  stats: { STR: 30, VIT: 10, DEX: 5, AGI: 5, INT: 5, MND: 5 },
+  weaponAtk: 0, armorDef: 0, magicAtk: 0, magicDef: 0, resistances: {},
+};
+const slashAction = { kind: "physical", attributes: { slash: 1 } };
+const damageBefore = withRolls([0.99], () => api.actionDamage(battleRun.api.playerUnit(), enemyUnitDef, slashAction).damage);
+const takenBefore = withRolls([0.99], () => api.actionDamage(enemyUnitDef, battleRun.api.playerUnit(), slashAction).damage);
+withRolls(Array.from({ length: 10 }, () => 0.005),
+  () => battleRun.api.enhanceEquipment("weapons", "trainingDagger", 10));
+withRolls(Array.from({ length: 10 }, () => 0.005),
+  () => battleRun.api.enhanceEquipment("armors", "travelerClothes", 10));
+equal("装備強化: 武器強化が実効ATKへ反映される", battleRun.api.weaponAtk(), api.enhancedValue(11, 10));
+equal("装備強化: 防具強化が実効DEFへ反映される", battleRun.api.armorDef(), api.enhancedValue(11, 10));
+equal("装備強化: 実効性能が戦闘ユニットへ渡る",
+  `${battleRun.api.playerUnit().weaponAtk},${battleRun.api.playerUnit().armorDef}`, "22,22");
+const damageAfter = withRolls([0.99], () => api.actionDamage(battleRun.api.playerUnit(), enemyUnitDef, slashAction).damage);
+const takenAfter = withRolls([0.99], () => api.actionDamage(enemyUnitDef, battleRun.api.playerUnit(), slashAction).damage);
+check("装備強化: 武器強化で与ダメージが増える", damageAfter > damageBefore, `${damageBefore} → ${damageAfter}`);
+check("装備強化: 防具強化で被ダメージが減る", takenAfter < takenBefore, `${takenBefore} → ${takenAfter}`);
+
+// 実行条件
+const guardRun = smithInstance();
+guardRun.api.state.location = "forest";
+equal("装備強化: 街以外では強化できない",
+  withRolls([0.1], () => guardRun.api.enhanceEquipment("weapons", "trainingDagger", 1)), null);
+guardRun.api.state.location = "town";
+equal("装備強化: 未所持の装備は強化できない",
+  withRolls([0.1], () => guardRun.api.enhanceEquipment("weapons", "ironDagger", 1)), null);
+equal("装備強化: 未知の装備IDでは強化しない",
+  withRolls([0.1], () => guardRun.api.enhanceEquipment("weapons", "unknownGear", 1)), null);
+equal("装備強化: 不正な試行回数では強化しない",
+  withRolls([0.1], () => guardRun.api.enhanceEquipment("weapons", "trainingDagger", 0)), null);
+equal("装備強化: 実行しなかった場合はGoldが変化しない", guardRun.api.state.gold, 1000);
+
+// UI導線
+const smithUi = smithInstance();
+smithUi.api.setLocationAction("smith");
+smithUi.api.render();
+const smithScreen = smithUi.elements.screen.innerHTML;
+check("鍛冶屋: 街の行動へ鍛冶屋を追加する", /鍛冶屋/.test(smithUi.elements.locationButtons.innerHTML + smithScreen), smithScreen.slice(0, 200));
+check("鍛冶屋: 対象装備名と現在強化値を表示する", /訓練用の短剣/.test(smithScreen) && /\+0/.test(smithScreen));
+check("鍛冶屋: 基礎性能と実効性能を表示する", /ATK 11 → <strong>11<\/strong>/.test(smithScreen));
+check("鍛冶屋: 現在段階の成功率を表示する", /成功率 50%/.test(smithScreen));
+check("鍛冶屋: 1試行のGold費用と所持Goldを表示する", /所持金 1000 Gold/.test(smithScreen) && /1試行 1 Gold/.test(smithScreen));
+check("鍛冶屋: 1 / 10 / 50 / 100回の実行導線がある",
+  enhanceCfg.attempts.every((n) => smithScreen.includes(`data-enhance="weapons:trainingDagger:${n}"`)));
+check("鍛冶屋: 未所持装備は強化対象に出さない", smithScreen.includes("鉄の短剣") === false);
+withRolls([0.1], () => smithUi.api.enhanceEquipment("weapons", "trainingDagger", 1));
+const smithAfter = smithUi.elements.screen.innerHTML;
+check("鍛冶屋: 実行結果を画面へ表示する",
+  /直近の強化結果/.test(smithAfter) && /試行 1 \/ 1 回（成功 1 ／ 失敗 0）/.test(smithAfter), smithAfter.slice(-400));
+check("鍛冶屋: 実行結果をシステムログへ残す",
+  smithUi.api.state.systemLog.some((entry) => /鍛冶屋：訓練用の短剣 \+0 → \+1/.test(entry.message)),
+  JSON.stringify(smithUi.api.state.systemLog.slice(0, 2)));
+check("鍛冶屋: 強化値を冒険者情報へ表示する", /訓練用の短剣 \+1（ATK 12）/.test(smithUi.elements.weaponName.textContent),
+  smithUi.elements.weaponName.textContent);
+// +10では実行ボタンを無効化する
+withRolls(Array.from({ length: 9 }, () => 0.005), () => smithUi.api.enhanceEquipment("weapons", "trainingDagger", 9));
+check("鍛冶屋: +10装備の実行導線を無効化する",
+  /data-enhance="weapons:trainingDagger:1" disabled/.test(smithUi.elements.screen.innerHTML)
+  && /強化完了/.test(smithUi.elements.screen.innerHTML));
+
+// 検証用Gold付与
+const debugGold = loadPrototype(file, {});
+const goldBefore = debugGold.api.state.gold;
+debugGold.api.debug("gold");
+equal("デバッグ: 検証用Goldを付与する", debugGold.api.state.gold, goldBefore + CONFIG.debugGold);
+check("デバッグ: 正式なGold供給源ではない旨をログへ残す",
+  debugGold.api.state.systemLog.some((entry) => /正式なGold供給源ではない/.test(entry.message)));
+
+// 既存のショップ導線に回帰がないこと
+const shopRun = loadPrototype(file, {});
+shopRun.api.state.gold = 15;
+shopRun.api.buy("weapons", "ironDagger");
+equal("回帰: 装備を購入できる", shopRun.api.state.ownedEquipment.includes("ironDagger"), true);
+equal("回帰: 購入でGoldを消費する", shopRun.api.state.gold, 0);
+shopRun.api.equip("weapons", "ironDagger");
+equal("回帰: 装備を変更できる", shopRun.api.state.equippedWeapon, "ironDagger");
+equal("回帰: 購入した装備は+0から始まる", shopRun.api.enhanceLevel("ironDagger"), 0);
+equal("回帰: 未強化装備の実効ATKは基礎値と一致する", shopRun.api.weaponAtk(), 13);
+
 /* ---------- 旧セーブからの移行 ---------- */
 const now = Date.now();
 const legacy = {
