@@ -31,6 +31,7 @@ const EXPORTS = [
   "weaponAtk", "armorDef", "enhanceSuccessRate", "enhanceEquipment", "smithBodyHtml", "playerUnit",
   "buy", "equip",
   "bossDef", "lastBossHtml",
+  "moveLayer", "layerDef", "layerUnlocked", "layerEntry", "layerLocations", "normalizeLayer", "layerNavHtml",
 ];
 
 function loadPrototype(file, storeSeed) {
