@@ -539,8 +539,9 @@ function exploreUntilProgress(instance, locationId, attempts = 15) {
   return false;
 }
 
+// Issue #111で第2層の仮入口を追加したため、第1層のロケーションだけを比較する
 equal("第1層: ロケーションは街・森・巣穴の3種",
-  CONFIG.locations.list.map((def) => `${def.id}:${def.name}`).join(","),
+  CONFIG.locations.list.filter((def) => def.layer === 1).map((def) => `${def.id}:${def.name}`).join(","),
   "town:アルマセント,forest:アルンの森,den:ゴブリンの巣穴");
 check("第1層: 新規stateでアルンの森はunlocked", w().locations.forest.unlocked === true);
 check("第1層: 新規stateでゴブリンの巣穴はlocked", w().locations.den.unlocked === false);
@@ -1665,6 +1666,132 @@ equal("ボス戦ログ: 再描画してもターン数が変わらない",
   bossLogWin.battle.turns.length);
 equal("ボス戦ログ: 表示はlocalStorageへ保存しない",
   JSON.parse(bossLogWin.instance.store[CONFIG.storageKey] || "{}").lastBossResult, undefined);
+
+/* ---------- 第2層への最小遷移（Issue #111 / PROTOTYPE ASSUMPTION） ---------- */
+equal("階層: 第1層と第2層を定義する",
+  CONFIG.layers.list.map((def) => `${def.id}:${def.name}`).join(","), "1:第1層,2:第2層");
+equal("階層: 各階層の入口ロケーションを明示する",
+  CONFIG.layers.list.map((def) => def.entry).join(","), "town,layer2Entry");
+equal("階層: 第2層は遷移検証用のplaceholderのみを持つ",
+  CONFIG.locations.list.filter((def) => def.layer === 2).map((def) => `${def.id}:${def.kind}`).join(","),
+  "layer2Entry:placeholder");
+equal("階層: 既存ロケーションはすべて第1層に属する",
+  CONFIG.locations.list.filter((def) => def.layer !== 2).every((def) => def.layer === 1), true);
+
+// 新規stateとロック状態
+const layerFresh = loadPrototype(file, {});
+equal("階層: 新規stateの現在階層は第1層", layerFresh.api.state.layer, 1);
+equal("階層: 新規stateの現在地は第1層の入口", layerFresh.api.state.location, "town");
+equal("階層: 第2層は未解放", layerFresh.api.layerUnlocked(2), false);
+layerFresh.api.moveLayer(2);
+equal("階層: 未解放の間は第2層へ移動できない",
+  `${layerFresh.api.state.layer},${layerFresh.api.state.location}`, "1,town");
+check("階層: 未解放の理由をログへ残す",
+  layerFresh.api.state.systemLog.some((entry) => /第2層はまだ解放されていない/.test(entry.message)),
+  JSON.stringify(layerFresh.api.state.systemLog.slice(0, 2)));
+layerFresh.api.render();
+check("階層UI: 未解放の第2層はdisabledで表示する",
+  /data-layer="2"[^>]*disabled/.test(layerFresh.elements.layerButtons.innerHTML),
+  layerFresh.elements.layerButtons.innerHTML);
+check("階層UI: 未解放の解放条件を示す",
+  /ゴブリン・ウォーロードを撃破すると解放される/.test(layerFresh.elements.layerButtons.innerHTML));
+check("階層UI: 現在の階層を示す",
+  /data-layer="1"[^>]*disabled/.test(layerFresh.elements.layerButtons.innerHTML)
+  && /layer-button active/.test(layerFresh.elements.layerButtons.innerHTML));
+equal("階層UI: 現在階層をヘッダーへ表示する", layerFresh.elements.currentLayer.textContent, "第1層");
+check("階層UI: 第1層では第2層の仮入口をロケーションへ出さない",
+  layerFresh.elements.locationButtons.innerHTML.includes("layer2Entry") === false);
+
+// ボス撃破 → 第2層解放 → 遷移
+const layerRun = bossReady(loadPrototype(file, {}));
+forceVictory(layerRun);
+layerRun.api.state.explorationDepth.forest = 40;
+withRolls(Array.from({ length: 80 }, () => 0.999), () => layerRun.api.challengeBoss("goblinWarlord"));
+equal("階層: ウォーロード勝利で第2層が解放される", layerRun.api.worldState.layers.layer2Unlocked, true);
+equal("階層: 解放されても現在階層は変わらない（解放状態と現在階層は独立）", layerRun.api.state.layer, 1);
+equal("階層: 解放後は第2層が移動可能になる", layerRun.api.layerUnlocked(2), true);
+layerRun.api.moveLayer(2);
+equal("階層: 解放後は第2層へ移動できる", layerRun.api.state.layer, 2);
+equal("階層: 第2層では仮入口ロケーションにいる", layerRun.api.state.location, "layer2Entry");
+equal("階層: 第2層移動後もworld stateは変化しない",
+  `${layerRun.api.locationProgress("den")},${layerRun.api.worldState.bosses.goblinWarlord.defeated}`, "100,true");
+check("階層: 階層移動をログへ残す",
+  layerRun.api.state.systemLog.some((entry) => /第1層から第2層へ移動した/.test(entry.message)));
+layerRun.api.render();
+equal("階層UI: 第2層では現在階層表示が第2層になる", layerRun.elements.currentLayer.textContent, "第2層");
+check("階層UI: 第2層では仮入口ロケーションだけを表示する",
+  /data-location="layer2Entry"/.test(layerRun.elements.locationButtons.innerHTML)
+  && ["town", "forest", "den"].every((id) => layerRun.elements.locationButtons.innerHTML.includes(`data-location="${id}"`) === false),
+  layerRun.elements.locationButtons.innerHTML);
+check("階層UI: 第2層の画面はコンテンツ未実装であることを示す",
+  /第2層 仮入口/.test(layerRun.elements.screen.innerHTML)
+  && /この階層のPrototypeコンテンツは未実装です/.test(layerRun.elements.screen.innerHTML),
+  layerRun.elements.screen.innerHTML.slice(0, 400));
+check("階層UI: 第2層の画面から第1層へ戻れることを示す",
+  /第1層へ戻ると、これまでの進行を続けられます/.test(layerRun.elements.screen.innerHTML));
+check("階層UI: 第2層では探索・宿屋等の行動を出さない",
+  /data-cost=/.test(layerRun.elements.screen.innerHTML) === false
+  && /id="inn"/.test(layerRun.elements.screen.innerHTML) === false);
+equal("階層UI: 第2層では踏破率を表示しない", layerRun.elements.clearRateBox.hidden, true);
+
+// 第1層へ戻っても既存進行を維持する
+layerRun.api.moveLayer(1);
+equal("階層: 第2層から第1層へ戻れる",
+  `${layerRun.api.state.layer},${layerRun.api.state.location}`, "1,town");
+equal("階層: 第1層へ戻っても踏破率を維持する",
+  `${layerRun.api.locationProgress("forest")},${layerRun.api.locationProgress("den")}`, "100,100");
+equal("階層: 第1層へ戻ってもボス撃破・第2層解放を維持する",
+  `${layerRun.api.worldState.bosses.goblinWarlord.defeated},${layerRun.api.worldState.layers.layer2Unlocked}`,
+  "true,true");
+equal("階層: 第1層へ戻ってもクエスト完了状態を維持する",
+  `${layerRun.api.worldState.quest.current},${layerRun.api.worldState.quest.completed.includes("goblinCleanup")}`,
+  "null,true");
+equal("階層: 第1層へ戻っても個人の探索深度を維持する", layerRun.api.state.explorationDepth.forest, 40);
+layerRun.api.render();
+check("階層UI: 第1層へ戻ると第1層のロケーションを表示する",
+  ["town", "forest", "den"].every((id) => layerRun.elements.locationButtons.innerHTML.includes(`data-location="${id}"`)));
+
+// 保存と再読込
+layerRun.api.moveLayer(2);
+layerRun.api.save();
+layerRun.api.saveWorld();
+equal("階層: 現在階層を保存する", JSON.parse(layerRun.store[CONFIG.storageKey]).layer, 2);
+const layerReloaded = loadPrototype(file, layerRun.store);
+equal("階層: 再読込後も第2層にいる",
+  `${layerReloaded.api.state.layer},${layerReloaded.api.state.location}`, "2,layer2Entry");
+equal("階層: 再読込後も第1層の進行を維持する",
+  `${layerReloaded.api.locationProgress("den")},${layerReloaded.api.worldState.bosses.goblinWarlord.defeated}`,
+  "100,true");
+// 未解放なのに第2層が保存されている場合は第1層へ落とす
+const layerInvalid = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({ layer: 2, location: "layer2Entry", gold: 42 }),
+});
+equal("階層: 未解放の階層が保存されていても第1層へ正規化する",
+  `${layerInvalid.api.state.layer},${layerInvalid.api.state.location}`, "1,town");
+equal("階層: 正規化しても他の状態を失わない", layerInvalid.api.state.gold, 42);
+// 現在階層と一致しないロケーションも入口へ落とす
+const layerMismatch = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({ layer: 1, location: "layer2Entry" }),
+});
+equal("階層: 現在階層に属さないロケーションは入口へ落とす", layerMismatch.api.state.location, "town");
+equal("階層: 不正な階層値は第1層として扱う",
+  loadPrototype(file, { [CONFIG.storageKey]: JSON.stringify({ layer: "2" }) }).api.state.layer, 1);
+
+// 第2層にいても第1層の探索状態を壊さない（回帰確認）
+const layerExplore = bossReady(loadPrototype(file, {}));
+forceVictory(layerExplore);
+withRolls(Array.from({ length: 80 }, () => 0.999), () => layerExplore.api.challengeBoss("goblinWarlord"));
+layerExplore.api.moveLayer(2);
+const depthBefore = JSON.stringify(layerExplore.api.state.explorationDepth);
+layerExplore.api.explore(10);
+equal("階層: 第2層では探索を実行しない", JSON.stringify(layerExplore.api.state.explorationDepth), depthBefore);
+layerExplore.api.moveLayer(1);
+layerExplore.api.move("forest");
+layerExplore.api.debug("restore");
+layerExplore.api.state.staminaSpent = 0;
+layerExplore.api.explore(10);
+equal("階層: 第1層へ戻れば従来どおり探索できる",
+  layerExplore.api.state.lastResult.location, "forest");
 
 /* ---------- 旧セーブからの移行 ---------- */
 const now = Date.now();
