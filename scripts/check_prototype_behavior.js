@@ -1602,6 +1602,70 @@ check("デバッグ戦闘: HP / MPは戦闘結果として反映される",
 bossDebug.api.debug("restore");
 equal("デバッグ戦闘: 全回復で同条件から繰り返し比較できる", bossDebug.api.state.currentHp, maxHp);
 
+/* ---------- 直近のボス戦の戦闘詳細（Issue #107 / PROTOTYPE ASSUMPTION） ---------- */
+// 表示は実際のbattle結果を再利用する。詳細のために戦闘を再実行・再生成しない
+function bossLogInstance(force) {
+  const instance = bossReady(loadPrototype(file, {}));
+  force(instance);
+  const battle = withRolls(Array.from({ length: 80 }, () => 0.999),
+    () => instance.api.challengeBoss("goblinWarlord"));
+  instance.api.render();
+  return { instance, battle, html: instance.elements.screen.innerHTML };
+}
+const bossLogWin = bossLogInstance(forceVictory);
+const bossLogLose = bossLogInstance(forceDefeat);
+equal("ボス戦ログ: 勝利を再現できる", bossLogWin.battle.result, "victory");
+equal("ボス戦ログ: 敗北を再現できる", bossLogLose.battle.result, "defeat");
+
+for (const [label, run] of [["勝利", bossLogWin], ["敗北", bossLogLose]]) {
+  const html = run.html;
+  const detail = html.slice(html.indexOf("直近のボス戦"));
+  check(`ボス戦ログ（${label}）: 直近のボス戦へ戦闘詳細の導線がある`,
+    /<details class="battle-log">/.test(detail) && /戦闘詳細を見る/.test(detail), detail.slice(0, 300));
+  check(`ボス戦ログ（${label}）: 戦闘詳細は初期状態で閉じている`,
+    /<details class="battle-log" open>/.test(detail) === false, detail.slice(0, 300));
+  check(`ボス戦ログ（${label}）: 実際のボス戦のターンを表示する`,
+    (detail.match(/ターン：プレイヤー/g) || []).length === run.battle.turns.length,
+    `turns=${run.battle.turns.length}, li=${(detail.match(/ターン：プレイヤー/g) || []).length}`);
+  check(`ボス戦ログ（${label}）: 折りたたんだままでも勝敗が分かる`,
+    new RegExp(`ゴブリン・ウォーロードとのオートバトル：${label}`).test(detail), detail.slice(0, 300));
+  check(`ボス戦ログ（${label}）: 要約の勝敗とターン数を維持する`,
+    new RegExp(`ゴブリン・ウォーロード：${label}（${run.battle.turns.length}ターン）`).test(detail), detail.slice(0, 300));
+  check(`ボス戦ログ（${label}）: 要約の終了時HP / MPを維持する`,
+    new RegExp(`終了時 HP ${run.instance.api.state.currentHp} / ${maxHp}`).test(detail)
+    && new RegExp(`MP ${run.instance.api.state.currentMp} / ${CONFIG.battle.player.maxMp}`).test(detail),
+    detail.slice(0, 300));
+  check(`ボス戦ログ（${label}）: 要約のボス残HPを維持する`,
+    new RegExp(`ゴブリン・ウォーロード HP ${run.battle.enemyHp} / ${run.battle.enemyMaxHp}`).test(detail),
+    detail.slice(0, 400));
+  check(`ボス戦ログ（${label}）: 展開すれば戦闘終了時のHP / MPまで追える`,
+    /戦闘終了：プレイヤー HP/.test(detail));
+}
+check("ボス戦ログ: 勝利では第2層解放を要約へ残す", /第2層が解放された。/.test(bossLogWin.html));
+check("ボス戦ログ: 敗北では討伐不成立を要約へ残す", /討伐は成立していない。/.test(bossLogLose.html));
+
+// 再描画しても戦闘を再実行しない
+const beforeRerender = JSON.stringify({
+  world: bossLogWin.instance.api.worldState,
+  hp: bossLogWin.instance.api.state.currentHp, mp: bossLogWin.instance.api.state.currentMp,
+  gold: bossLogWin.instance.api.state.gold, exp: bossLogWin.instance.api.state.exp,
+  log: bossLogWin.instance.api.state.systemLog.length,
+});
+bossLogWin.instance.api.render();
+bossLogWin.instance.api.render();
+equal("ボス戦ログ: 再描画しても戦闘を再実行しない（state・world・ログが変わらない）",
+  JSON.stringify({
+    world: bossLogWin.instance.api.worldState,
+    hp: bossLogWin.instance.api.state.currentHp, mp: bossLogWin.instance.api.state.currentMp,
+    gold: bossLogWin.instance.api.state.gold, exp: bossLogWin.instance.api.state.exp,
+    log: bossLogWin.instance.api.state.systemLog.length,
+  }), beforeRerender);
+equal("ボス戦ログ: 再描画してもターン数が変わらない",
+  (bossLogWin.instance.elements.screen.innerHTML.match(/ターン：プレイヤー/g) || []).length,
+  bossLogWin.battle.turns.length);
+equal("ボス戦ログ: 表示はlocalStorageへ保存しない",
+  JSON.parse(bossLogWin.instance.store[CONFIG.storageKey] || "{}").lastBossResult, undefined);
+
 /* ---------- 旧セーブからの移行 ---------- */
 const now = Date.now();
 const legacy = {
