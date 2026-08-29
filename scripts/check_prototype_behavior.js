@@ -663,12 +663,13 @@ check("第1層: 解放判定をまとめて実行しても順に発火する",
   && bossFlow.api.worldState.bosses.goblinWarlord.unlocked === true);
 bossFlow.api.state.location = "den";
 bossFlow.api.render();
-check("第1層UI: 未撃破時は検証用撃破ボタンを表示する",
-  /data-boss="goblinWarlord"/.test(bossFlow.elements.screen.innerHTML));
-bossFlow.api.challengeBoss("goblinWarlord");
-check("第1層: 検証用撃破で第2層まで解放される",
-  bossFlow.api.worldState.bosses.goblinWarlord.defeated === true
-  && bossFlow.api.worldState.layers.layer2Unlocked === true);
+// Issue #105で検証用撃破ボタンを実際のボス戦へ置き換えた
+check("第1層UI: 未撃破時はボスへの挑戦ボタンを表示する",
+  /data-boss="goblinWarlord"/.test(bossFlow.elements.screen.innerHTML)
+  && /ゴブリン・ウォーロードへ挑戦する/.test(bossFlow.elements.screen.innerHTML),
+  bossFlow.elements.screen.innerHTML);
+check("第1層UI: ボスのHPと現在のHP / MPを表示する",
+  new RegExp(`ゴブリン・ウォーロード　HP ${CONFIG.battle.bosses[0].maxHp}`).test(bossFlow.elements.screen.innerHTML));
 
 // 旧形式の世界進行は破棄して初期化する（Issue #76 §9）
 const legacyWorld = loadPrototype(file, {
@@ -1407,6 +1408,199 @@ shopRun.api.equip("weapons", "ironDagger");
 equal("回帰: 装備を変更できる", shopRun.api.state.equippedWeapon, "ironDagger");
 equal("回帰: 購入した装備は+0から始まる", shopRun.api.enhanceLevel("ironDagger"), 0);
 equal("回帰: 未強化装備の実効ATKは基礎値と一致する", shopRun.api.weaponAtk(), 13);
+
+/* ---------- 第1層ボス戦（Issue #105 / PROTOTYPE ASSUMPTION） ---------- */
+const bossEnemy = CONFIG.battle.bosses.find((entry) => entry.id === "goblinWarlord");
+check("ボス: ゴブリン・ウォーロードの敵定義がある", Boolean(bossEnemy));
+check("ボス: 戦闘に必要なデータを持つ",
+  bossEnemy.maxHp > 0 && bossEnemy.actions.length >= 2 && bossEnemy.actions.length <= 3
+  && CONFIG.stats.order.every((key) => Number.isFinite(bossEnemy.stats[key]))
+  && Boolean(bossEnemy.resistances.physical && bossEnemy.resistances.magic),
+  JSON.stringify({ hp: bossEnemy.maxHp, actions: bossEnemy.actions.length }));
+equal("ボス: 行動確率の合計が1",
+  Math.abs(bossEnemy.actions.reduce((total, action) => total + action.probability, 0) - 1) < 1e-9, true);
+equal("ボス: 敵定義を共通の解決経路から引ける", api.enemyDef("goblinWarlord").name, "ゴブリン・ウォーロード");
+equal("ボス: 単一行動テーブルのUtility AIを使う",
+  Object.keys(bossEnemy.ai.actions).length, bossEnemy.actions.length);
+equal("ボス: 専用報酬を持たない", `${bossEnemy.exp},${bossEnemy.material}`, "0,null");
+equal("ボス: 世界進行のボス定義と敵定義のIDが対応する",
+  CONFIG.world.bosses.every((entry) => Boolean(api.enemyDef(entry.id))), true);
+
+// ボス戦を決定論的に再現する。作戦は通常攻撃のみとし、会心・抽選の揺れを固定する
+function bossReady(instance) {
+  instance.api.addWorldProgress("forest", 100);
+  instance.api.applyWorldUnlocks();
+  instance.api.addWorldProgress("den", 100);
+  instance.api.applyWorldUnlocks();
+  instance.api.state.location = "den";
+  instance.api.state.tactics = { attack: 100, firstAid: 0 };
+  instance.api.state.currentHp = maxHp;
+  instance.api.state.currentMp = CONFIG.battle.player.maxMp;
+  return instance;
+}
+// 勝利条件：STRと強化値を十分に上げると数ターンで撃破できる
+function forceVictory(instance) {
+  instance.api.state.stats = { ...CONFIG.stats.initial, STR: 60 };
+  instance.api.state.enhancements = { trainingDagger: 10, travelerClothes: 10 };
+}
+// 敗北条件：HP1から開始すると反撃で必ず倒れる
+function forceDefeat(instance) {
+  instance.api.state.currentHp = 1;
+}
+
+// 未解放では通常導線から挑戦できない
+const bossLocked = bossReady(loadPrototype(file, {}));
+bossLocked.api.worldState.bosses.goblinWarlord.unlocked = false;
+equal("ボス: 未解放では挑戦できない",
+  withRolls([0.999], () => bossLocked.api.challengeBoss("goblinWarlord")), null);
+equal("ボス: 未解放で挑戦してもworld stateが変わらない",
+  `${bossLocked.api.worldState.bosses.goblinWarlord.defeated},${bossLocked.api.worldState.layers.layer2Unlocked}`,
+  "false,false");
+
+// 巣穴100%で解放される既存挙動を維持する
+const bossUnlock = bossReady(loadPrototype(file, {}));
+equal("ボス: 巣穴100%で解放される", bossUnlock.api.worldState.bosses.goblinWarlord.unlocked, true);
+equal("ボス: 解放時点では未撃破", bossUnlock.api.worldState.bosses.goblinWarlord.defeated, false);
+
+// 敗北では討伐が成立しない
+const bossLose = bossReady(loadPrototype(file, {}));
+forceDefeat(bossLose);
+const loseBattle = withRolls(Array.from({ length: 40 }, () => 0.999),
+  () => bossLose.api.challengeBoss("goblinWarlord"));
+equal("ボス戦: 敗北を再現できる", loseBattle?.result, "defeat");
+equal("ボス戦: 敗北ではdefeatedがfalseのまま", bossLose.api.worldState.bosses.goblinWarlord.defeated, false);
+equal("ボス戦: 敗北では第2層が解放されない", bossLose.api.worldState.layers.layer2Unlocked, false);
+equal("ボス戦: 敗北ではクエストが進行しない", bossLose.api.worldState.quest.current, "goblinCleanup");
+equal("ボス戦: 敗北後のHPは0", bossLose.api.state.currentHp, 0);
+check("ボス戦: 敗北をログへ残す",
+  bossLose.api.state.systemLog.some((entry) => /ボス戦結果：敗北/.test(entry.message))
+  && bossLose.api.state.systemLog.some((entry) => /討伐は成立せず/.test(entry.message)));
+// HPが0のままでは再挑戦できない
+equal("ボス戦: HP0では挑戦できない",
+  withRolls([0.999], () => bossLose.api.challengeBoss("goblinWarlord")), null);
+check("ボス戦: HP0の理由をログへ残す",
+  bossLose.api.state.systemLog.some((entry) => /HPが0のためボス戦を開始できない/.test(entry.message)));
+
+// 勝利で第1層進行が1回だけ進む
+const bossWin = bossReady(loadPrototype(file, {}));
+forceVictory(bossWin);
+bossWin.api.state.gold = 50;
+bossWin.api.state.items = { "薬草": 2 };
+bossWin.api.state.staminaSpent = 30;
+bossWin.api.state.satiety = 500;
+const beforeWin = JSON.stringify({
+  gold: bossWin.api.state.gold, exp: bossWin.api.state.exp, level: bossWin.api.state.level,
+  items: bossWin.api.state.items, staminaSpent: bossWin.api.state.staminaSpent,
+  satiety: bossWin.api.state.satiety, depth: bossWin.api.state.explorationDepth,
+  progress: bossWin.api.locationProgress("den"),
+});
+const winBattle = withRolls(Array.from({ length: 40 }, () => 0.999),
+  () => bossWin.api.challengeBoss("goblinWarlord"));
+equal("ボス戦: 勝利を再現できる", winBattle?.result, "victory");
+equal("ボス戦: 勝利でdefeatedになる", bossWin.api.worldState.bosses.goblinWarlord.defeated, true);
+equal("ボス戦: 勝利で第2層が解放される", bossWin.api.worldState.layers.layer2Unlocked, true);
+equal("ボス戦: 勝利で第1層クエストが完了する",
+  `${bossWin.api.worldState.quest.current},${bossWin.api.worldState.quest.completed.includes("goblinCleanup")}`,
+  "null,true");
+equal("ボス戦: 勝利しても専用報酬・EXP・Gold・素材・スタミナ・踏破率は変化しない",
+  JSON.stringify({
+    gold: bossWin.api.state.gold, exp: bossWin.api.state.exp, level: bossWin.api.state.level,
+    items: bossWin.api.state.items, staminaSpent: bossWin.api.state.staminaSpent,
+    satiety: bossWin.api.state.satiety, depth: bossWin.api.state.explorationDepth,
+    progress: bossWin.api.locationProgress("den"),
+  }), beforeWin);
+check("ボス戦: 戦闘後のHP / MPをログで確認できる",
+  bossWin.api.state.systemLog.some((entry) => /ボス戦結果：勝利/.test(entry.message) && /HP .* → .* \/ 130/.test(entry.message)),
+  JSON.stringify(bossWin.api.state.systemLog.slice(0, 3)));
+equal("ボス戦: 戦闘結果のHPがstateへ反映される", bossWin.api.state.currentHp, winBattle.playerHp);
+// 撃破後は重複して進行しない
+const afterWin = JSON.stringify(bossWin.api.worldState);
+equal("ボス戦: 撃破済みでは再挑戦できない",
+  withRolls(Array.from({ length: 40 }, () => 0.999), () => bossWin.api.challengeBoss("goblinWarlord")), null);
+equal("ボス戦: 再度挑戦しても進行が重複しない", JSON.stringify(bossWin.api.worldState), afterWin);
+bossWin.api.render();
+check("ボス戦UI: 撃破済みと第2層解放を表示する",
+  /ゴブリン・ウォーロードは討伐済みです/.test(bossWin.elements.screen.innerHTML)
+  && /第2層が解放されました/.test(bossWin.elements.screen.innerHTML));
+
+// 街からは挑戦できない
+const bossTown = bossReady(loadPrototype(file, {}));
+bossTown.api.state.location = "town";
+equal("ボス戦: ボスのいるロケーション以外からは挑戦できない",
+  withRolls([0.999], () => bossTown.api.challengeBoss("goblinWarlord")), null);
+equal("ボス戦: 挑戦できない場合はworld stateが変わらない",
+  bossTown.api.worldState.bosses.goblinWarlord.defeated, false);
+
+// 既存戦闘と同じダメージ処理を使い、装備強化が反映される
+const bossDamage = bossReady(loadPrototype(file, {}));
+const attackAction = CONFIG.battle.player.actions.find((action) => action.id === "attack");
+const bossUnitDef = {
+  stats: bossEnemy.stats, weaponAtk: 0, armorDef: 0, magicAtk: 0, magicDef: 0,
+  resistances: bossEnemy.resistances,
+};
+const plainDamage = withRolls([0.999],
+  () => api.actionDamage(bossDamage.api.playerUnit(), bossUnitDef, attackAction).damage);
+const firstTurn = withRolls(Array.from({ length: 40 }, () => 0.999),
+  () => bossDamage.api.runBattle([{ ...bossEnemy, probability: 1 }])).turns[0];
+equal("ボス戦: 通常戦闘と同じダメージ処理を使う", firstTurn.playerDamage, plainDamage);
+bossDamage.api.state.enhancements = { trainingDagger: 10, travelerClothes: 10 };
+const enhancedDamage = withRolls([0.999],
+  () => api.actionDamage(bossDamage.api.playerUnit(), bossUnitDef, attackAction).damage);
+check("ボス戦: 武器強化がボスへの与ダメージへ反映される", enhancedDamage > plainDamage,
+  `${plainDamage} → ${enhancedDamage}`);
+const takenPlain = withRolls([0.999],
+  () => api.actionDamage(bossUnitDef, loadPrototype(file, {}).api.playerUnit(), bossEnemy.actions[0]).damage);
+const takenEnhanced = withRolls([0.999],
+  () => api.actionDamage(bossUnitDef, bossDamage.api.playerUnit(), bossEnemy.actions[0]).damage);
+check("ボス戦: 防具強化がボスからの被ダメージへ反映される", takenEnhanced < takenPlain,
+  `${takenPlain} → ${takenEnhanced}`);
+
+// 戦力差が結果へ表れること（決定論的な固定条件で比較する）
+function bossOutcome(stats, level) {
+  const instance = bossReady(loadPrototype(file, {}));
+  instance.api.state.stats = { ...CONFIG.stats.initial, ...stats };
+  instance.api.state.enhancements = { trainingDagger: level, travelerClothes: level };
+  const battle = withRolls(Array.from({ length: 80 }, () => 0.999),
+    () => instance.api.runBattle([{ ...bossEnemy, probability: 1 }]));
+  return { result: battle.result, turns: battle.turns.length, enemyHp: battle.enemyHp, playerHp: battle.playerHp };
+}
+const plainOutcome = bossOutcome({}, 0);
+const enhancedOutcome = bossOutcome({}, 10);
+equal("ボス強度: 未強化のLv1初期状態では勝てない", plainOutcome.result, "defeat");
+equal("ボス強度: 強化するとLv1初期状態でも勝てる", enhancedOutcome.result, "victory");
+check("ボス強度: 強化でボスへ与える総ダメージが増える", enhancedOutcome.enemyHp < plainOutcome.enemyHp,
+  `${plainOutcome.enemyHp} → ${enhancedOutcome.enemyHp}`);
+// 通常攻撃のみの決定論条件では、STR / VITを伸ばすと未強化でも勝てる
+const grownOutcome = bossOutcome({ STR: 21, VIT: 21 }, 0);
+equal("ボス強度: 成長すれば未強化でも勝てる（+10だけが正解ではない）", grownOutcome.result, "victory");
+
+// デバッグ直接戦闘（Issue #80と同じ扱い）
+const bossDebug = loadPrototype(file, {});
+bossDebug.api.state.tactics = { attack: 100, firstAid: 0 };
+bossDebug.api.state.stats = { ...CONFIG.stats.initial, STR: 60 };
+bossDebug.api.state.enhancements = { trainingDagger: 10, travelerClothes: 10 };
+bossDebug.api.state.gold = 77;
+bossDebug.api.state.items = { "薬草": 1 };
+const beforeDebugBoss = JSON.stringify({
+  world: bossDebug.api.worldState, gold: bossDebug.api.state.gold, exp: bossDebug.api.state.exp,
+  items: bossDebug.api.state.items, staminaSpent: bossDebug.api.state.staminaSpent,
+  satiety: bossDebug.api.state.satiety, depth: bossDebug.api.state.explorationDepth,
+});
+const debugBossBattle = withRolls(Array.from({ length: 40 }, () => 0.999),
+  () => bossDebug.api.debugBattle("goblinWarlord"));
+equal("デバッグ戦闘: ボス未解放でもボスと直接戦闘できる", debugBossBattle?.enemyName, "ゴブリン・ウォーロード");
+equal("デバッグ戦闘: 通常ボス戦と同じ敵定義を使う", debugBossBattle.enemyMaxHp, bossEnemy.maxHp);
+equal("デバッグ戦闘: 勝利しても撃破フラグ・クエスト・第2層・報酬が変化しない",
+  JSON.stringify({
+    world: bossDebug.api.worldState, gold: bossDebug.api.state.gold, exp: bossDebug.api.state.exp,
+    items: bossDebug.api.state.items, staminaSpent: bossDebug.api.state.staminaSpent,
+    satiety: bossDebug.api.state.satiety, depth: bossDebug.api.state.explorationDepth,
+  }), beforeDebugBoss);
+equal("デバッグ戦闘: ボス戦の勝敗は通常戦闘と同じ判定", debugBossBattle.result, "victory");
+check("デバッグ戦闘: HP / MPは戦闘結果として反映される",
+  bossDebug.api.state.currentHp <= maxHp && bossDebug.api.state.currentHp === debugBossBattle.playerHp);
+bossDebug.api.debug("restore");
+equal("デバッグ戦闘: 全回復で同条件から繰り返し比較できる", bossDebug.api.state.currentHp, maxHp);
 
 /* ---------- 旧セーブからの移行 ---------- */
 const now = Date.now();
