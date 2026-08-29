@@ -30,6 +30,7 @@ const EXPORTS = [
   "enhanceConfig", "enhanceLevel", "normalizeEnhancements", "enhancedValue", "equipmentPower",
   "weaponAtk", "armorDef", "enhanceSuccessRate", "enhanceEquipment", "smithBodyHtml", "playerUnit",
   "buy", "equip",
+  "bossDef", "lastBossHtml",
 ];
 
 function loadPrototype(file, storeSeed) {

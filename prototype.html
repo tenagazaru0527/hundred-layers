@@ -176,6 +176,7 @@ button{position:relative;min-height:35px;padding:7px 11px;border:1px solid #625b
       <button data-debug="gold">検証用 Gold +1000</button>
       <button data-debug="battle:alphaWolf">アルファウルフと直接戦闘</button>
       <button data-debug="battle:orc">洞窟オークと直接戦闘</button>
+      <button data-debug="battle:goblinWarlord">ゴブリン・ウォーロードと直接戦闘</button>
       <button data-debug="progress">内部探索深度 +10</button>
       <button data-debug="99">内部探索深度を99にする</button>
       <button data-debug="world">踏破率 +10</button>
@@ -195,6 +196,9 @@ CONFIG.battle.player.maxMp=50;
 CONFIG.satiety={assumption:'PROTOTYPE ASSUMPTION',multiplier:10,label:'満腹度',icon:'🍖'};
 // 装備強化（Issue #102）。段階強化・最大+10・失敗しても装備消失や強化値低下なし
 // 成功率・費用・性能倍率はいずれもPrototypeバランス仮値であり、正式仕様ではない
+// 第1層ボス（Issue #105）。既存の敵データ構造と同じ形式で定義し、専用のダメージ計算は作らない
+// HP・能力値・行動倍率・行動率はいずれもPrototypeバランス仮値であり、正式なボス仕様ではない
+CONFIG.battle.bosses=[{id:'goblinWarlord',name:'ゴブリン・ウォーロード',maxHp:190,exp:0,material:null,stats:{STR:43,VIT:12,DEX:12,AGI:10,INT:8,MND:8},actions:[{name:'鉈の一撃',probability:.6,kind:'physical',attributes:{slash:.95}},{name:'斧の振り下ろし',probability:.25,kind:'physical',attributes:{blunt:1.15}},{name:'角笛の突撃',probability:.15,kind:'physical',attributes:{pierce:1.05}}],resistances:{physical:{slash:0,pierce:0,blunt:0},magic:{fire:0,water:0,earth:0,wind:0,holy:0,dark:0}},ai:{assumption:'PROTOTYPE ASSUMPTION',thresholds:{targetLow:.4,selfLow:.4},actions:{'鉈の一撃':{baseScore:50,targetLowHpBonus:0,selfLowHpBonus:0},'斧の振り下ろし':{baseScore:30,targetLowHpBonus:30,selfLowHpBonus:20},'角笛の突撃':{baseScore:20,targetLowHpBonus:10,selfLowHpBonus:25}}}}];
 // Human Verification用の検証専用Gold付与量（Issue #102）。正式なGold供給源ではない
 CONFIG.debugGold=1000;
 CONFIG.battle.equipment.enhance={assumption:'PROTOTYPE ASSUMPTION',maxLevel:10,goldPerAttempt:1,powerPerLevel:.1,attempts:[1,10,50,100],successRates:[.5,.4,.3,.2,.1,.05,.04,.03,.02,.01]};
@@ -247,6 +251,8 @@ function defaultLocationAction(location){return LOCATION_ACTIONS[location][0].id
 let locationAction=defaultLocationAction(state.location);
 // 直近の鍛錬結果。表示にのみ使い、localStorageへ保存しない（Issue #102）
 let lastEnhanceResult=null;
+// 直近のボス戦結果。表示にのみ使い、localStorageへ保存しない（Issue #105）
+let lastBossResult=null;
 // 旧形式から移行した場合、無操作でもこの時点で新形式を書き戻し、次回の再移行を避ける
 if(staminaMigrated){save();staminaMigrated=false}
 // 旧形式の世界進行は破棄しているため、その事実をログへ明示して新形式を書き戻す（Issue #76）
@@ -299,7 +305,7 @@ function saveWorld(){localStorage.setItem(CONFIG.worldStorageKey,JSON.stringify(
 function locationDef(id){return CONFIG.locations.list.find(entry=>entry.id===id)}
 // ロケーション別コンテンツ（Issue #78）。敵・イベント・報酬の分岐はここへ集約し、呼び出し側でロケーション判定を散らさない
 function locationContent(id){return CONFIG.locations.content[id]}
-function enemyDef(id){return CONFIG.battle.enemies.find(entry=>entry.id===id)||CONFIG.battle.eliteEnemies.find(entry=>entry.id===id)}
+function enemyDef(id){return CONFIG.battle.enemies.find(entry=>entry.id===id)||CONFIG.battle.eliteEnemies.find(entry=>entry.id===id)||CONFIG.battle.bosses.find(entry=>entry.id===id)}
 // マスタの敵データへロケーション別の出現率を載せた戦闘用候補を作る。未定義IDは候補から外す
 function encounterPool(location,kind){return (locationContent(location)?.[kind]||[]).map(entry=>{const def=enemyDef(entry.id);return def?{...def,probability:entry.probability}:null}).filter(Boolean)}
 // イベント文中の {item} / {amount} を実際の取得物へ置き換える
@@ -335,7 +341,11 @@ const LOCATION_ICONS={town:'<path d="M3 20h18M5 20v-8l4-3v11M9 20V6l4-3v17M13 20
 // 未解放ロケーションも常時表示し、disabledと解放条件で示す（Issue #76の仮採用）
 function locationNavHtml(){return CONFIG.locations.list.map(def=>{const unlocked=locationUnlocked(def.id),by=locationDef(def.unlockedBy?.location),label=unlocked?`${def.name}へ移動`:`${def.name}（未解放：${by?`${by.name} 踏破率100%で解放`:'解放条件未設定'}）`;return `<button data-location="${def.id}" class="loc-button${unlocked?'':' locked'}" ${unlocked&&state.location!==def.id?'':'disabled'} aria-label="${esc(label)}" title="${esc(label)}"><svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true">${LOCATION_ICONS[def.id]||''}</svg><span>${esc(def.name)}</span>${unlocked?'':'<span class="loc-lock" aria-hidden="true">🔒</span>'}</button>`}).join('')}
 // Prototype検証用の撃破導線。正式なボス戦闘は未実装であり、進行フラグだけを立てる（Issue #76 §6）
-function challengeBoss(id){const def=bossDef(id);if(!def||worldState.bosses[id]?.unlocked!==true)return;if(!defeatBoss(id)){writeLog(`${def.name}はすでに討伐済みである。`);render();return}writeLog(`${def.name}を撃破した。Prototype検証用の撃破処理であり、正式なボス戦闘は未実装である。`);writeLog(`${CONFIG.world.layer2Name}への移動が解放された。第2層のコンテンツは準備中である。`);saveWorld();save();render()}
+// 第1層ボス戦（Issue #105 / PROTOTYPE ASSUMPTION）。挑戦にスタミナ・Gold・アイテムを消費せず、
+// 現在のHP / MPで1戦する。専用報酬はなく、勝利価値はクエスト完了と第2層解放に限る
+function challengeBoss(id){const def=bossDef(id),entry=worldState.bosses[id];if(!def||entry?.unlocked!==true)return null;const enemy=enemyDef(id);if(!enemy){writeLog(`${def.name}の戦闘データが見つからない。`);render();return null}if(entry.defeated){writeLog(`${def.name}はすでに討伐済みである。`);render();return null}if(state.location!==def.location){writeLog(`${def.name}へは${locationDef(def.location).name}から挑戦できる。`);render();return null}if(state.currentHp<=0){writeLog('HPが0のためボス戦を開始できない。街へ戻り宿屋で休むと再挑戦できる。');render();return null}if(!validTactics(state.tactics,state.abilities)){writeLog('行動の優先度設定が不正なためボス戦を開始できない。');render();return null}const maxHp=CONFIG.battle.player.maxHp,maxMp=CONFIG.battle.player.maxMp,beforeHp=state.currentHp,beforeMp=state.currentMp,battle=runBattle([{...enemy,probability:1}]);writeLog(`ボス戦開始：${battle.enemyName}（作戦：${battle.strategyName}）　HP ${beforeHp}/${maxHp}・MP ${beforeMp}/${maxMp} から開始`);writeBattleTurns(battle);writeLog(`ボス戦結果：${battle.result==='victory'?'勝利':'敗北'}　HP ${beforeHp} → ${state.currentHp} / ${maxHp}、MP ${beforeMp} → ${state.currentMp} / ${maxMp}`);let unlocked=false;if(battle.result==='victory'){unlocked=defeatBoss(id);if(unlocked){writeLog(`${def.name}を撃破した。`);writeLog(`${CONFIG.world.layer2Name}への移動が解放された。第2層のコンテンツは準備中である。`)}saveWorld()}else{writeLog(`${def.name}に敗北した。討伐は成立せず、${CONFIG.world.layer2Name}は解放されない。街の宿屋で回復すると再挑戦できる。`)}lastBossResult={name:def.name,result:battle.result,turns:battle.turns.length,playerHp:state.currentHp,playerMp:state.currentMp,enemyHp:battle.enemyHp,enemyMaxHp:battle.enemyMaxHp,unlocked};writeLog('ボス戦では専用報酬・EXP・Gold・素材を付与しない。スタミナも消費しない（Issue #105のPrototype検証条件）。');save();render();return battle}
+// 直近のボス戦結果。表示専用でlocalStorageへ保存しない
+function lastBossHtml(id){const r=lastBossResult;if(!r||r.name!==bossDef(id)?.name)return '';return `<div class="reward"><strong>直近のボス戦</strong><br>${esc(r.name)}：${r.result==='victory'?'勝利':'敗北'}（${r.turns}ターン）<br>終了時 HP ${r.playerHp} / ${CONFIG.battle.player.maxHp} ｜ MP ${r.playerMp} / ${CONFIG.battle.player.maxMp}<br>${esc(r.name)} HP ${r.enemyHp} / ${r.enemyMaxHp}<br>${r.unlocked?`${esc(CONFIG.world.layer2Name)}が解放された。`:r.result==='victory'?'':'討伐は成立していない。'}</div>`}
 function locationActionsHtml(location){return `<nav class="loc-actions" aria-label="現在地の行動">${LOCATION_ACTIONS[location].map(action=>action.unimplemented?`<button disabled>${action.label}<span class="unimplemented">（未実装）</span></button>`:`<button class="${action.id===locationAction?'primary':''}" data-action="${action.id}">${action.label}</button>`).join('')}</nav><div class="action-selected">選択中：${LOCATION_ACTIONS[location].find(action=>action.id===locationAction)?.label||''}</div>`}
 function setLocationAction(id){if(locationAction===id)return;locationAction=id;render()}
 // 左ショートカット: 対象パネルを開いてその位置までスクロールする。他のパネルは閉じない（Prototype案A）
@@ -347,7 +357,7 @@ function town(s){el('screenHeading').textContent='現在地の行動';const body
 // 街のPrototype検証用補給導線（Issue #87 §9）。宿屋のHP / MP回復とは別の操作として並べる
 function satietySupplyHtml(){const max=maxSatiety();return `<div class="action-area"><div class="label">満腹度（検証用）</div><p class="assumption">${CONFIG.satiety.assumption}：Issue #87の検証用補給です。宿屋・食事・料理・食料アイテム・Gold・生産とは接続していません。</p><div>${CONFIG.satiety.icon} 満腹度 ${state.satiety} / ${max}</div><button id="satietySupply" ${state.satiety>=max?'disabled':''}>満腹度を補給（検証用）</button></div>`}
 // そのロケーションを担当するボスの解放・撃破状態を示す。撃破導線はPrototype検証用（Issue #76 §6）
-function bossAreaHtml(locationId){const def=CONFIG.world.bosses.find(entry=>entry.location===locationId);if(!def)return '';const entry=worldState.bosses[def.id];if(!entry.unlocked)return `<div class="action-area"><div class="label">世界進行</div><div class="notice">${esc(locationDef(locationId).name)}の踏破率が100%に到達すると、${esc(def.name)}が解放されます。</div></div>`;return `<div class="action-area"><div class="label">世界進行</div><div class="notice">${esc(def.name)}が解放されました。踏破率100%到達後も、このロケーションで通常探索を続けられます。</div>${entry.defeated?`<div class="notice">${esc(def.name)}は討伐済みです。</div>`:`<p class="assumption">PROTOTYPE ASSUMPTION：正式なボス戦闘は未実装です。進行確認用に撃破フラグだけを立てます。</p><button class="primary" data-boss="${def.id}">${esc(def.name)}を撃破（検証用）</button>`}</div>`}
+function bossAreaHtml(locationId){const def=CONFIG.world.bosses.find(entry=>entry.location===locationId);if(!def)return '';const entry=worldState.bosses[def.id];if(!entry.unlocked)return `<div class="action-area"><div class="label">世界進行</div><div class="notice">${esc(locationDef(locationId).name)}の踏破率が100%に到達すると、${esc(def.name)}が解放されます。</div></div>`;const enemy=enemyDef(def.id),ready=state.currentHp>0;return `<div class="action-area"><div class="label">世界進行</div><div class="notice">${esc(def.name)}が解放されました。踏破率100%到達後も、このロケーションで通常探索を続けられます。</div>${entry.defeated?`<div class="notice">${esc(def.name)}は討伐済みです。${esc(CONFIG.world.layer2Name)}が解放されています。</div>`:`<p class="assumption">${CONFIG.battle.assumption}：ボスのHP・能力値・行動はPrototype用の仮値です。挑戦にスタミナ・Gold・アイテムは消費せず、現在のHP / MPで1戦します。専用報酬はなく、勝利すると第1層クエスト完了と${esc(CONFIG.world.layer2Name)}解放だけが進みます。</p><div>${esc(def.name)}　HP ${enemy?.maxHp||0}</div><div>現在 HP ${state.currentHp} / ${CONFIG.battle.player.maxHp} ｜ MP ${state.currentMp} / ${CONFIG.battle.player.maxMp}</div>${ready?'':'<p class="notice warning">HPが0のため挑戦できません。街へ戻り宿屋で休んでください。</p>'}<button class="primary" data-boss="${def.id}" ${ready?'':'disabled'}>${esc(def.name)}へ挑戦する</button>`}${lastBossHtml(def.id)}</div>`}
 function layer2Html(){return worldState.layers.layer2Unlocked?`<div class="notice">${esc(CONFIG.world.layer2Name)}が解放されました。${esc(CONFIG.world.layer2Name)}のロケーション・敵・クエストは準備中です。</div>`:''}
 function abilityLevel(id){return state.abilities?.[id]||0}
 function abilityDef(id){return CONFIG.battle.abilities.list.find(entry=>entry.id===id)}
