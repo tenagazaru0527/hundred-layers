@@ -1410,6 +1410,182 @@ equal("回帰: 装備を変更できる", shopRun.api.state.equippedWeapon, "iro
 equal("回帰: 購入した装備は+0から始まる", shopRun.api.enhanceLevel("ironDagger"), 0);
 equal("回帰: 未強化装備の実効ATKは基礎値と一致する", shopRun.api.weaponAtk(), 13);
 
+/* ---------- 武器ごとの通常攻撃属性配分（Issue #125 / PROTOTYPE ASSUMPTION） ---------- */
+const weaponMasters = CONFIG.battle.equipment.weapons;
+const weaponMaster = (id) => weaponMasters.find((entry) => entry.id === id);
+const attrText = (attributes) => JSON.stringify(attributes);
+// 0.6 + 0.3 + 0.1 のような合成配分は二進小数で誤差を持つため、比較は許容誤差付きで行う
+const nearly = (label, actual, expected) =>
+  check(label, Math.abs(actual - expected) < 1e-9, `expected ${expected}, got ${actual}`);
+
+check("武器属性: すべての武器が通常攻撃属性配分を持つ",
+  weaponMasters.every((entry) => entry.normalAttackAttributes
+    && Object.keys(entry.normalAttackAttributes).length > 0),
+  JSON.stringify(weaponMasters.map((entry) => [entry.id, entry.normalAttackAttributes])));
+equal("武器属性: 訓練用の短剣は現行挙動維持の斬1.00",
+  attrText(weaponMaster("trainingDagger").normalAttackAttributes), attrText({ slash: 1 }));
+equal("武器属性: 鉄の短剣は現行挙動維持の斬1.00",
+  attrText(weaponMaster("ironDagger").normalAttackAttributes), attrText({ slash: 1 }));
+equal("武器属性: 検証用へ追加するのはブロンズソード1本だけ", weaponMasters.length, 3);
+equal("武器属性: ブロンズソードの物攻と価格",
+  `${weaponMaster("bronzeSword").name},${weaponMaster("bronzeSword").atk},${weaponMaster("bronzeSword").price}`,
+  "ブロンズソード,12,150");
+equal("武器属性: ブロンズソードの配分は斬0.60 / 突0.30 / 打0.10",
+  attrText(weaponMaster("bronzeSword").normalAttackAttributes),
+  attrText({ slash: 0.6, pierce: 0.3, blunt: 0.1 }));
+
+// 装備武器ごとのインスタンス。ブロンズソードは購入してから装備する
+function weaponInstance(weaponId) {
+  const instance = loadPrototype(file, {});
+  instance.api.state.gold = 1000;
+  if (weaponId !== "trainingDagger") {
+    instance.api.buy("weapons", weaponId);
+    instance.api.equip("weapons", weaponId);
+  }
+  return instance;
+}
+const daggerRun = weaponInstance("trainingDagger");
+const bronzeRun = weaponInstance("bronzeSword");
+const normalAttackOf = (instance) =>
+  instance.api.CONFIG.battle.player.actions.find((action) => action.id === "attack");
+const heavySkillOf = (instance) =>
+  instance.api.CONFIG.battle.player.actions.find((action) => action.id === "skill");
+
+equal("武器属性: ブロンズソードを150 Goldで購入する", bronzeRun.api.state.gold, 850);
+equal("武器属性: 購入した武器へ装備変更できる", bronzeRun.api.state.equippedWeapon, "bronzeSword");
+
+equal("通常攻撃: 装備中武器の属性配分を参照する",
+  attrText(bronzeRun.api.weaponNormalAttackAttributes()),
+  attrText({ slash: 0.6, pierce: 0.3, blunt: 0.1 }));
+equal("通常攻撃: 既存短剣は現行どおり斬1.00を参照する",
+  attrText(daggerRun.api.weaponNormalAttackAttributes()), attrText({ slash: 1 }));
+equal("通常攻撃: 行動データではなく装備武器の配分で解決する",
+  attrText(bronzeRun.api.resolvePlayerAction(normalAttackOf(bronzeRun)).attributes),
+  attrText(bronzeRun.api.weaponNormalAttackAttributes()));
+equal("通常攻撃: 解決しても行動データ側の属性配分を書き換えない",
+  attrText(normalAttackOf(bronzeRun).attributes), attrText({ slash: 1 }));
+nearly("通常攻撃: 武器属性を二重計上しない",
+  bronzeRun.api.attributeTotal(bronzeRun.api.resolvePlayerAction(normalAttackOf(bronzeRun))), 1);
+
+// 装備変更で通常攻撃属性も切り替わる
+bronzeRun.api.equip("weapons", "trainingDagger");
+equal("通常攻撃: 装備変更で属性配分も切り替わる",
+  attrText(bronzeRun.api.weaponNormalAttackAttributes()), attrText({ slash: 1 }));
+bronzeRun.api.equip("weapons", "bronzeSword");
+equal("通常攻撃: 装備を戻すと属性配分も戻る",
+  attrText(bronzeRun.api.weaponNormalAttackAttributes()),
+  attrText({ slash: 0.6, pierce: 0.3, blunt: 0.1 }));
+
+equal("Skill: 武器の通常攻撃属性を参照しない",
+  attrText(bronzeRun.api.resolvePlayerAction(heavySkillOf(bronzeRun)).attributes),
+  attrText({ slash: 1.42 }));
+equal("Skill: 武器属性と合成せずSkill自身の倍率だけを使う",
+  bronzeRun.api.attributeTotal(bronzeRun.api.resolvePlayerAction(heavySkillOf(bronzeRun))), 1.42);
+check("Skill: 解決してもSkill行動データを差し替えない",
+  bronzeRun.api.resolvePlayerAction(heavySkillOf(bronzeRun)) === heavySkillOf(bronzeRun));
+
+// 既存の属性倍率／耐性計算へそのまま接続する（物理攻撃力 = STR 10 + 武器ATK、物理防御力 = VIT 6）
+const pierceResistant = unit({
+  stats: { STR: 30, VIT: 6, DEX: 5, AGI: 5, INT: 5, MND: 5 },
+  resistances: { physical: { slash: 0, pierce: 0.6, blunt: 0 } },
+});
+const slashResistant = unit({
+  stats: { STR: 30, VIT: 6, DEX: 5, AGI: 5, INT: 5, MND: 5 },
+  resistances: { physical: { slash: 0.5, pierce: 0, blunt: 0 } },
+});
+const daggerNormal = daggerRun.api.resolvePlayerAction(normalAttackOf(daggerRun));
+const bronzeNormal = bronzeRun.api.resolvePlayerAction(normalAttackOf(bronzeRun));
+nearly("耐性接続: 斬のみの短剣は突耐性を受けない",
+  api.baseDamage(daggerRun.api.playerUnit(), pierceResistant, daggerNormal), 21 * 1 - 6 * 1);
+nearly("耐性接続: 突を含むブロンズソードは突耐性を受ける",
+  api.baseDamage(bronzeRun.api.playerUnit(), pierceResistant, bronzeNormal), 22 * 1 - 6 * 1.6);
+nearly("耐性接続: 斬耐性はどちらの武器も受ける（短剣）",
+  api.baseDamage(daggerRun.api.playerUnit(), slashResistant, daggerNormal), 21 * 1 - 6 * 1.5);
+nearly("耐性接続: 斬耐性はどちらの武器も受ける（ブロンズソード）",
+  api.baseDamage(bronzeRun.api.playerUnit(), slashResistant, bronzeNormal), 22 * 1 - 6 * 1.5);
+nearly("耐性接続: Skillは武器側の突を巻き込まない",
+  api.baseDamage(bronzeRun.api.playerUnit(), pierceResistant,
+    bronzeRun.api.resolvePlayerAction(heavySkillOf(bronzeRun))), 22 * 1.42 - 6 * 1);
+
+// 既存戦闘・行動選択への回帰
+const bronzeBattle = weaponInstance("bronzeSword");
+const bronzeBattleResult = bronzeBattle.api.runBattle([
+  { ...bronzeBattle.api.enemyDef("slime"), probability: 1 },
+]);
+check("回帰: ブロンズソード装備でも戦闘が成立する",
+  ["victory", "defeat"].includes(bronzeBattleResult.result) && bronzeBattleResult.turns.length > 0,
+  JSON.stringify({ result: bronzeBattleResult.result, turns: bronzeBattleResult.turns.length }));
+check("回帰: 戦闘ログの行動名は行動データ側のまま",
+  bronzeBattleResult.turns.every((turn) => ["通常攻撃", "強打", "応急手当"].includes(turn.playerAction)),
+  JSON.stringify(bronzeBattleResult.turns.map((turn) => turn.playerAction)));
+check("回帰: 武器属性の追加後もUtility AIが行動を選べる",
+  Boolean(bronzeRun.api.simulatePlayerStrategy("balanced", {}).action));
+
+// 戦闘経路そのものが装備武器の属性配分を使うことを決定的に確認する
+// Math.random を常に0.999へ固定し、通常攻撃のみを候補にすることで会心・行動抽選の揺れを排除する
+const attributeDummyEnemy = {
+  id: "attributeDummy", name: "属性検証ダミー", maxHp: 100, exp: 0, material: null,
+  stats: { STR: 1, VIT: 6, DEX: 1, AGI: 20, INT: 1, MND: 1 },
+  actions: [{ name: "様子見", probability: 1, kind: "physical", attributes: { slash: 0 } }],
+  resistances: { physical: { slash: 0, pierce: 0.6, blunt: 0 }, magic: {} },
+  probability: 1,
+};
+function firstTurnDamage(weaponId) {
+  const instance = weaponInstance(weaponId);
+  instance.api.state.tactics = { attack: 100, firstAid: 0 };
+  const battle = withRolls([], () => instance.api.runBattle([attributeDummyEnemy]));
+  return battle.turns[0];
+}
+const daggerTurn = firstTurnDamage("trainingDagger");
+const bronzeTurn = firstTurnDamage("bronzeSword");
+equal("戦闘接続: 通常攻撃が選ばれている",
+  `${daggerTurn.playerAction},${bronzeTurn.playerAction}`, "通常攻撃,通常攻撃");
+// 短剣: (STR 10 + ATK 11) × 斬1.00 - VIT 6 × (1 + 耐性0) = 15、DEX / AGI補正 ×0.88
+equal("戦闘接続: 斬のみの短剣は突耐性を受けない", daggerTurn.playerDamage, Math.floor(15 * 0.88));
+// ブロンズソード: (STR 10 + ATK 12) × 1.00 - VIT 6 × (1 + 突耐性0.6) = 12.4、DEX / AGI補正 ×0.88
+equal("戦闘接続: 突を含むブロンズソードは突耐性を受ける", bronzeTurn.playerDamage, Math.floor(12.4 * 0.88));
+check("戦闘接続: 装備武器の属性差が与ダメージへ現れる",
+  daggerTurn.playerDamage !== bronzeTurn.playerDamage,
+  `${daggerTurn.playerDamage} / ${bronzeTurn.playerDamage}`);
+
+// 旧セーブ互換
+const legacyWeaponSave = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({
+    gold: 10, ownedEquipment: ["trainingDagger", "ironDagger", "travelerClothes"],
+    equippedWeapon: "ironDagger", equippedArmor: "travelerClothes",
+  }),
+});
+equal("旧セーブ: 追加武器を持たない旧セーブでも装備を保持する",
+  legacyWeaponSave.api.state.equippedWeapon, "ironDagger");
+check("旧セーブ: ブロンズソードを自動付与しない",
+  legacyWeaponSave.api.state.ownedEquipment.includes("bronzeSword") === false,
+  legacyWeaponSave.api.state.ownedEquipment.join(","));
+equal("旧セーブ: 旧セーブの装備でも通常攻撃属性を解決できる",
+  attrText(legacyWeaponSave.api.weaponNormalAttackAttributes()), attrText({ slash: 1 }));
+const unknownWeaponSave = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({ equippedWeapon: "unknownGear" }),
+});
+equal("旧セーブ: 未知の装備IDはスターター装備の属性へフォールバックする",
+  attrText(unknownWeaponSave.api.weaponNormalAttackAttributes()), attrText({ slash: 1 }));
+equal("武器属性: 属性配分を持たない武器データは行動データ側の配分へフォールバックする",
+  attrText(api.normalAttackAttributes({ id: "legacyWeapon", atk: 5 })), attrText({ slash: 1 }));
+
+// UI
+const weaponUi = weaponInstance("bronzeSword");
+weaponUi.api.render();
+const equipmentUiHtml = weaponUi.api.equipmentHtml();
+check("装備UI: 装備中武器の通常攻撃属性を表示する",
+  /通常攻撃 斬60% \/ 突30% \/ 打10%/.test(equipmentUiHtml), equipmentUiHtml.slice(0, 400));
+check("装備UI: 候補武器の通常攻撃属性も表示する",
+  /通常攻撃 斬100%/.test(equipmentUiHtml));
+equal("装備UI: 通常攻撃属性は武器3種にだけ表示する",
+  (equipmentUiHtml.match(/通常攻撃 /g) || []).length, 3);
+// 武器名と通常攻撃属性は行を分けて表示する（区切り記号は置かない）。幅の狭い冒険者情報では属性の区切りも詰める
+equal("冒険者情報: 装備中武器の通常攻撃属性を改行して表示する",
+  weaponUi.elements.weaponName.textContent, "ブロンズソード（ATK 12）\n通常攻撃 斬60%/突30%/打10%");
+equal("装備UI: 装備一覧の区切りは詰めない",
+  api.normalAttackAttributesText(weaponMaster("bronzeSword")), "斬60% / 突30% / 打10%");
+
 /* ---------- 第1層ボス戦（Issue #105 / PROTOTYPE ASSUMPTION） ---------- */
 const bossEnemy = CONFIG.battle.bosses.find((entry) => entry.id === "goblinWarlord");
 check("ボス: ゴブリン・ウォーロードの敵定義がある", Boolean(bossEnemy));
