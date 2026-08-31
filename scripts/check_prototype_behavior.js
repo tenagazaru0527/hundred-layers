@@ -1580,9 +1580,11 @@ check("装備UI: 候補武器の通常攻撃属性も表示する",
   /通常攻撃 斬100%/.test(equipmentUiHtml));
 equal("装備UI: 通常攻撃属性は武器3種にだけ表示する",
   (equipmentUiHtml.match(/通常攻撃 /g) || []).length, 3);
-check("冒険者情報: 装備中武器の通常攻撃属性を表示する",
-  /ブロンズソード（ATK 12）／ 通常攻撃 斬60% \/ 突30% \/ 打10%/.test(weaponUi.elements.weaponName.textContent),
-  weaponUi.elements.weaponName.textContent);
+// 武器名と通常攻撃属性は行を分けて表示する（区切り記号は置かない）。幅の狭い冒険者情報では属性の区切りも詰める
+equal("冒険者情報: 装備中武器の通常攻撃属性を改行して表示する",
+  weaponUi.elements.weaponName.textContent, "ブロンズソード（ATK 12）\n通常攻撃 斬60%/突30%/打10%");
+equal("装備UI: 装備一覧の区切りは詰めない",
+  api.normalAttackAttributesText(weaponMaster("bronzeSword")), "斬60% / 突30% / 打10%");
 
 /* ---------- 第1層ボス戦（Issue #105 / PROTOTYPE ASSUMPTION） ---------- */
 const bossEnemy = CONFIG.battle.bosses.find((entry) => entry.id === "goblinWarlord");
