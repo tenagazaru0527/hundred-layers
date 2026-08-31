@@ -29,6 +29,8 @@ const EXPORTS = [
   "aggregateGains", "gainsHtml", "resultHtml",
   "enhanceConfig", "enhanceLevel", "normalizeEnhancements", "enhancedValue", "equipmentPower",
   "weaponAtk", "armorDef", "enhanceSuccessRate", "enhanceEquipment", "smithBodyHtml", "playerUnit",
+  "normalAttackAttributes", "weaponNormalAttackAttributes", "resolvePlayerAction",
+  "normalAttackAttributesText", "equipmentHtml",
   "buy", "equip",
   "bossDef", "lastBossHtml",
   "moveLayer", "layerDef", "layerUnlocked", "layerEntry", "layerLocations", "normalizeLayer", "layerNavHtml",
