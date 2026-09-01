@@ -180,9 +180,10 @@ equal("ダメージ: 複数属性は倍率を合計する",
   api.baseDamage(atkUnit, plainDef, { kind: "physical", attributes: { slash: 0.7, blunt: 0.7 } }), 21 * 1.4 - 10);
 equal("ダメージ: 攻撃に含まれない耐性は参照しない",
   api.baseDamage(atkUnit, unit({ stats: plainDef.stats, resistances: { physical: { blunt: 0.5 } } }), slash), 21 - 10);
-equal("ダメージ: 対応する耐性だけを合計する",
+// Issue #129で耐性は構成比重み付けへ変更した。斬50% / 打50%なら 0.5×0.5 + 0.5×0.5 = 0.50
+equal("ダメージ: 対応する耐性を構成比で重み付けする",
   api.baseDamage(atkUnit, unit({ stats: plainDef.stats, resistances: { physical: { slash: 0.5, blunt: 0.5 } } }),
-    { kind: "physical", attributes: { slash: 0.5, blunt: 0.5 } }), 21 - 10 * 2);
+    { kind: "physical", attributes: { slash: 0.5, blunt: 0.5 } }), 21 * 1 - 10 * 1.5);
 equal("ダメージ: 0未満を返さない",
   api.baseDamage(atkUnit, plainDef, { kind: "physical", attributes: { slash: 0.1 } }), 0);
 equal("ダメージ: 耐性データがなくても壊れない",
@@ -216,6 +217,68 @@ for (const action of CONFIG.battle.player.actions) {
     Number.isFinite(action.heal) ? action.heal > 0 : api.attributeTotal(action) > 0);
   check(`プレイヤー行動: ${action.name} に旧powerが残っていない`, action.power === undefined);
 }
+
+/* ---------- 属性構成比による耐性重み付け（Issue #129 / PROTOTYPE ASSUMPTION） ---------- */
+// 属性倍率合計は行動威力として維持し、耐性側だけ攻撃内の構成比へ正規化する
+const closeTo = (label, actual, expected) =>
+  check(label, Math.abs(actual - expected) < 1e-9, `expected ${expected}, got ${actual}`);
+const physical = (attributes) => ({ kind: "physical", attributes });
+const resist = (physicalTable) => unit({ stats: plainDef.stats, resistances: { physical: physicalTable } });
+
+// 単一属性は構成比100%となり、Issue #67の挙動と一致する
+closeTo("耐性重み付け: 単一属性 斬1.00 は従来と同じ耐性値",
+  api.weightedResistance(physical({ slash: 1 }), resist({ slash: 0.5 })), 0.5);
+closeTo("耐性重み付け: 単一属性 斬1.42 も構成比100%斬として扱う",
+  api.weightedResistance(physical({ slash: 1.42 }), resist({ slash: 0.5 })), 0.5);
+equal("耐性重み付け: 単一属性Skillの威力1.42を維持する", api.attributeTotal(physical({ slash: 1.42 })), 1.42);
+// 威力は倍率合計、耐性は構成比。0.50 を 0.50 × 1.42 のように増幅しない
+closeTo("耐性重み付け: 単一属性Skillは威力と耐性を分離する",
+  api.baseDamage(atkUnit, resist({ slash: 0.5 }), physical({ slash: 1.42 })), 21 * 1.42 - 10 * 1.5);
+
+// ブロンズソードの配分に斬耐性0.50なら 0.60 × 0.50 = 0.30
+closeTo("耐性重み付け: 斬0.60 / 突0.30 / 打0.10 に斬耐性0.50なら対応耐性0.30",
+  api.weightedResistance(physical({ slash: 0.6, pierce: 0.3, blunt: 0.1 }), resist({ slash: 0.5 })), 0.3);
+// 複数耐性は属性ごとの構成比で重み付けする（0.60×0.50 + 0.30×0.20 + 0.10×1.00 = 0.46）
+closeTo("耐性重み付け: 複数耐性を各属性の構成比で重み付けする",
+  api.weightedResistance(physical({ slash: 0.6, pierce: 0.3, blunt: 0.1 }),
+    resist({ slash: 0.5, pierce: 0.2, blunt: 1 })), 0.46);
+// 倍率合計1.40でも構成比は斬50% / 打50%。耐性は 0.5×0.5 + 0.5×0 = 0.25
+closeTo("耐性重み付け: 倍率合計が1.0を超えても威力と構成比を分離する",
+  api.weightedResistance(physical({ slash: 0.7, blunt: 0.7 }), resist({ slash: 0.5 })), 0.25);
+closeTo("耐性重み付け: 倍率合計1.40は威力としてそのまま使う",
+  api.baseDamage(atkUnit, resist({ slash: 0.5 }), physical({ slash: 0.7, blunt: 0.7 })), 21 * 1.4 - 10 * 1.25);
+
+// 攻撃に含まれない属性・耐性なしの扱い
+equal("耐性重み付け: 攻撃に含まれない属性耐性は影響しない",
+  api.weightedResistance(physical({ slash: 1 }), resist({ blunt: 0.5 })), 0);
+closeTo("耐性重み付け: 耐性0では従来と同じダメージになる",
+  api.baseDamage(atkUnit, plainDef, physical({ slash: 0.6, pierce: 0.3, blunt: 0.1 })), 21 * 1 - 10);
+equal("耐性重み付け: 耐性データがなくても壊れない",
+  api.weightedResistance(physical({ slash: 1 }), unit({ resistances: undefined })), 0);
+// 属性倍率合計が0の攻撃では0除算せず耐性0を返す
+equal("耐性重み付け: 属性未設定では耐性0を返す", api.weightedResistance({ kind: "physical" }, resist({ slash: 0.5 })), 0);
+equal("耐性重み付け: 属性倍率がすべて0でも耐性0を返す",
+  api.weightedResistance(physical({ slash: 0, blunt: 0 }), resist({ slash: 0.5 })), 0);
+equal("耐性重み付け: 0ダメージ安全処理を維持する",
+  api.baseDamage(atkUnit, plainDef, physical({ slash: 0.1 })), 0);
+
+// 魔法も同じ耐性重み付け処理を共有する（魔法を使う行動は未実装のまま）
+closeTo("耐性重み付け: 魔法属性も同じ構成比重み付けを共有する",
+  api.weightedResistance({ kind: "magic", attributes: { fire: 0.75, water: 0.25 } },
+    unit({ resistances: { magic: { fire: 0.4, water: 0.8 } } })), 0.75 * 0.4 + 0.25 * 0.8);
+
+// 現行式（単純加算）との差を明示する。複数属性でのみ差が出る
+const simpleSum = (attributes, table) =>
+  Object.keys(attributes).reduce((sum, key) => sum + (table[key] || 0), 0);
+const mixedAttributes = { slash: 0.6, pierce: 0.3, blunt: 0.1 };
+const slashOnlyTable = { slash: 0.5, pierce: 0, blunt: 0 };
+equal("耐性重み付け: 単一属性では現行式と同値",
+  api.weightedResistance(physical({ slash: 1 }), resist(slashOnlyTable)),
+  simpleSum({ slash: 1 }, slashOnlyTable));
+check("耐性重み付け: 複数属性では現行式より耐性が小さくなる",
+  api.weightedResistance(physical(mixedAttributes), resist(slashOnlyTable))
+    < simpleSum(mixedAttributes, slashOnlyTable),
+  `${api.weightedResistance(physical(mixedAttributes), resist(slashOnlyTable))} < ${simpleSum(mixedAttributes, slashOnlyTable)}`);
 
 /* ---------- Ability / Skill（Issue #71） ---------- */
 const abilityDefs = CONFIG.battle.abilities.list;
@@ -1497,12 +1560,14 @@ const daggerNormal = daggerRun.api.resolvePlayerAction(normalAttackOf(daggerRun)
 const bronzeNormal = bronzeRun.api.resolvePlayerAction(normalAttackOf(bronzeRun));
 nearly("耐性接続: 斬のみの短剣は突耐性を受けない",
   api.baseDamage(daggerRun.api.playerUnit(), pierceResistant, daggerNormal), 21 * 1 - 6 * 1);
-nearly("耐性接続: 突を含むブロンズソードは突耐性を受ける",
-  api.baseDamage(bronzeRun.api.playerUnit(), pierceResistant, bronzeNormal), 22 * 1 - 6 * 1.6);
+// 突の構成比0.30 × 突耐性0.60 = 0.18（Issue #129）
+nearly("耐性接続: 突を含むブロンズソードは構成比の分だけ突耐性を受ける",
+  api.baseDamage(bronzeRun.api.playerUnit(), pierceResistant, bronzeNormal), 22 * 1 - 6 * 1.18);
 nearly("耐性接続: 斬耐性はどちらの武器も受ける（短剣）",
   api.baseDamage(daggerRun.api.playerUnit(), slashResistant, daggerNormal), 21 * 1 - 6 * 1.5);
-nearly("耐性接続: 斬耐性はどちらの武器も受ける（ブロンズソード）",
-  api.baseDamage(bronzeRun.api.playerUnit(), slashResistant, bronzeNormal), 22 * 1 - 6 * 1.5);
+// 斬の構成比0.60 × 斬耐性0.50 = 0.30。斬100%の短剣（0.50）より受ける耐性が小さい
+nearly("耐性接続: 斬耐性は斬の構成比の分だけ受ける（ブロンズソード）",
+  api.baseDamage(bronzeRun.api.playerUnit(), slashResistant, bronzeNormal), 22 * 1 - 6 * 1.3);
 nearly("耐性接続: Skillは武器側の突を巻き込まない",
   api.baseDamage(bronzeRun.api.playerUnit(), pierceResistant,
     bronzeRun.api.resolvePlayerAction(heavySkillOf(bronzeRun))), 22 * 1.42 - 6 * 1);
@@ -1525,9 +1590,9 @@ check("回帰: 武器属性の追加後もUtility AIが行動を選べる",
 // Math.random を常に0.999へ固定し、通常攻撃のみを候補にすることで会心・行動抽選の揺れを排除する
 const attributeDummyEnemy = {
   id: "attributeDummy", name: "属性検証ダミー", maxHp: 100, exp: 0, material: null,
-  stats: { STR: 1, VIT: 6, DEX: 1, AGI: 20, INT: 1, MND: 1 },
+  stats: { STR: 1, VIT: 10, DEX: 1, AGI: 20, INT: 1, MND: 1 },
   actions: [{ name: "様子見", probability: 1, kind: "physical", attributes: { slash: 0 } }],
-  resistances: { physical: { slash: 0, pierce: 0.6, blunt: 0 }, magic: {} },
+  resistances: { physical: { slash: 0, pierce: 1, blunt: 0 }, magic: {} },
   probability: 1,
 };
 function firstTurnDamage(weaponId) {
@@ -1540,10 +1605,11 @@ const daggerTurn = firstTurnDamage("trainingDagger");
 const bronzeTurn = firstTurnDamage("bronzeSword");
 equal("戦闘接続: 通常攻撃が選ばれている",
   `${daggerTurn.playerAction},${bronzeTurn.playerAction}`, "通常攻撃,通常攻撃");
-// 短剣: (STR 10 + ATK 11) × 斬1.00 - VIT 6 × (1 + 耐性0) = 15、DEX / AGI補正 ×0.88
-equal("戦闘接続: 斬のみの短剣は突耐性を受けない", daggerTurn.playerDamage, Math.floor(15 * 0.88));
-// ブロンズソード: (STR 10 + ATK 12) × 1.00 - VIT 6 × (1 + 突耐性0.6) = 12.4、DEX / AGI補正 ×0.88
-equal("戦闘接続: 突を含むブロンズソードは突耐性を受ける", bronzeTurn.playerDamage, Math.floor(12.4 * 0.88));
+// 短剣: (STR 10 + ATK 11) × 斬1.00 - VIT 10 × (1 + 耐性0) = 11、DEX / AGI補正 ×0.88
+equal("戦闘接続: 斬のみの短剣は突耐性を受けない", daggerTurn.playerDamage, Math.floor(11 * 0.88));
+// ブロンズソード: (STR 10 + ATK 12) × 1.00 - VIT 10 × (1 + 突構成比0.30 × 突耐性1.00) = 9、DEX / AGI補正 ×0.88
+equal("戦闘接続: 突を含むブロンズソードは構成比の分だけ突耐性を受ける",
+  bronzeTurn.playerDamage, Math.floor(9 * 0.88));
 check("戦闘接続: 装備武器の属性差が与ダメージへ現れる",
   daggerTurn.playerDamage !== bronzeTurn.playerDamage,
   `${daggerTurn.playerDamage} / ${bronzeTurn.playerDamage}`);

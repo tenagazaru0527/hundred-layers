@@ -15,7 +15,7 @@ const EXPORTS = [
   "CONFIG", "state", "worldState", "calendarParts", "accruedStamina", "currentStamina",
   "spendStamina", "formatStamina", "migrateStaminaSpent", "explore", "load", "save", "render",
   "move", "setLocationAction", "locationAction", "defaultLocationAction",
-  "attributeTotal", "resistanceTotal", "baseDamage", "actionDamage", "simulateUtility",
+  "attributeTotal", "weightedResistance", "baseDamage", "actionDamage", "simulateUtility",
   "abilityLevel", "canRaiseAbility", "raiseAbility", "actionsFor", "validTactics", "gainExp",
   "runBattle", "rest", "battleHtml",
   "normalizeStrategy", "strategyDef", "simulatePlayerStrategy", "choosePlayerAction",
