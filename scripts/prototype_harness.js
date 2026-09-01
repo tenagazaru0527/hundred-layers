@@ -17,6 +17,8 @@ const EXPORTS = [
   "move", "setLocationAction", "locationAction", "defaultLocationAction",
   "attributeTotal", "weightedResistance", "baseDamage", "actionDamage", "simulateUtility",
   "abilityLevel", "canRaiseAbility", "raiseAbility", "actionsFor", "validTactics", "gainExp",
+  "abilityStatRequirements", "meetsAbilityStats", "abilityBodyHtml", "statusBodyHtml", "allocate",
+  "equipmentModifiers", "equippedParameterModifiers", "effectiveStats", "baseStat",
   "runBattle", "rest", "battleHtml",
   "normalizeStrategy", "strategyDef", "simulatePlayerStrategy", "choosePlayerAction",
   "initialWorld", "normalizeWorld", "saveWorld", "addWorldProgress", "applyWorldUnlocks",

@@ -1489,7 +1489,8 @@ equal("武器属性: 訓練用の短剣は現行挙動維持の斬1.00",
   attrText(weaponMaster("trainingDagger").normalAttackAttributes), attrText({ slash: 1 }));
 equal("武器属性: 鉄の短剣は現行挙動維持の斬1.00",
   attrText(weaponMaster("ironDagger").normalAttackAttributes), attrText({ slash: 1 }));
-equal("武器属性: 検証用へ追加するのはブロンズソード1本だけ", weaponMasters.length, 3);
+equal("武器属性: 武器マスタの構成", weaponMasters.map((entry) => entry.id).join(","),
+  "trainingDagger,ironDagger,bronzeSword,magicSword");
 equal("武器属性: ブロンズソードの物攻と価格",
   `${weaponMaster("bronzeSword").name},${weaponMaster("bronzeSword").atk},${weaponMaster("bronzeSword").price}`,
   "ブロンズソード,12,150");
@@ -1644,13 +1645,188 @@ check("装備UI: 装備中武器の通常攻撃属性を表示する",
   /通常攻撃 斬60% \/ 突30% \/ 打10%/.test(equipmentUiHtml), equipmentUiHtml.slice(0, 400));
 check("装備UI: 候補武器の通常攻撃属性も表示する",
   /通常攻撃 斬100%/.test(equipmentUiHtml));
-equal("装備UI: 通常攻撃属性は武器3種にだけ表示する",
-  (equipmentUiHtml.match(/通常攻撃 /g) || []).length, 3);
+// 防具行には表示しないため、出現数は武器の数と一致する
+equal("装備UI: 通常攻撃属性は武器行にだけ表示する",
+  (equipmentUiHtml.match(/通常攻撃 /g) || []).length, weaponMasters.length);
 // 武器名と通常攻撃属性は行を分けて表示する（区切り記号は置かない）。幅の狭い冒険者情報では属性の区切りも詰める
 equal("冒険者情報: 装備中武器の通常攻撃属性を改行して表示する",
   weaponUi.elements.weaponName.textContent, "ブロンズソード（ATK 12）\n通常攻撃 斬60%/突30%/打10%");
 equal("装備UI: 装備一覧の区切りは詰めない",
   api.normalAttackAttributesText(weaponMaster("bronzeSword")), "斬60% / 突30% / 打10%");
+
+/* ---------- 装備パラメータ補正と基礎／実効ステータス（Issue #131 / PROTOTYPE ASSUMPTION） ---------- */
+const statOrder = CONFIG.stats.order;
+const magicSword = CONFIG.battle.equipment.weapons.find((entry) => entry.id === "magicSword");
+const statsText = (stats) => statOrder.map((key) => `${key}${stats[key]}`).join(" ");
+
+// 装備データ
+equal("装備補正: マジックソードを検証用に追加する",
+  `${magicSword.name},${magicSword.atk},${magicSword.price}`, "マジックソード,25,2200");
+equal("装備補正: マジックソードはDEX+2を持つ",
+  JSON.stringify(magicSword.parameterModifiers), JSON.stringify({ DEX: 2 }));
+equal("装備補正: マジックソードの通常攻撃属性は斬0.60 / 打0.40",
+  JSON.stringify(magicSword.normalAttackAttributes), JSON.stringify({ slash: 0.6, blunt: 0.4 }));
+check("装備補正: スターター装備はパラメータ補正を持たない",
+  Object.keys(api.equipmentModifiers(CONFIG.battle.equipment.weapons[0])).length === 0
+    && Object.keys(api.equipmentModifiers(CONFIG.battle.equipment.armors[0])).length === 0);
+check("装備補正: 固定OP／可変OPと別フィールドで保持する",
+  magicSword.fixedOptions === undefined && magicSword.options === undefined);
+// 6基本パラメータだけを集計対象にする（最大HP / MP等の派生値補正は未実装）
+equal("装備補正: 6基本パラメータをすべて集計できる",
+  JSON.stringify(api.equipmentModifiers({ parameterModifiers: { STR: 1, VIT: 2, DEX: 3, AGI: 4, INT: 5, MND: 6 } })),
+  JSON.stringify({ STR: 1, VIT: 2, DEX: 3, AGI: 4, INT: 5, MND: 6 }));
+equal("装備補正: 対象外キー（最大HP等）は集計しない",
+  JSON.stringify(api.equipmentModifiers({ parameterModifiers: { DEX: 2, maxHp: 10 } })),
+  JSON.stringify({ DEX: 2 }));
+
+// 実効ステータスの導出
+function magicSwordInstance() {
+  const instance = loadPrototype(file, {});
+  instance.api.state.gold = 5000;
+  instance.api.buy("weapons", "magicSword");
+  instance.api.equip("weapons", "magicSword");
+  return instance;
+}
+const baseRun = loadPrototype(file, {});
+const modRun = magicSwordInstance();
+equal("実効値: 装備補正なしなら実効値は基礎値と一致する",
+  statsText(baseRun.api.effectiveStats()), statsText(baseRun.api.state.stats));
+equal("実効値: 基礎DEX8 + マジックソードDEX+2 で実効DEX10", modRun.api.effectiveStats().DEX, 10);
+equal("実効値: state.statsは装備変更で変化しない", modRun.api.state.stats.DEX, 8);
+equal("実効値: 補正のないステータスは基礎値のまま",
+  `${modRun.api.effectiveStats().STR},${modRun.api.effectiveStats().VIT},${modRun.api.effectiveStats().AGI}`, "10,10,8");
+equal("実効値: INT / MNDも実効値として導出できる",
+  `${modRun.api.effectiveStats().INT},${modRun.api.effectiveStats().MND}`, "8,8");
+equal("実効値: 装備補正を集計できる",
+  JSON.stringify(modRun.api.equippedParameterModifiers()), JSON.stringify({ DEX: 2 }));
+
+// 装備を外す／切り替える
+modRun.api.equip("weapons", "trainingDagger");
+equal("実効値: 別武器へ変更すると実効DEXが基礎値へ戻る", modRun.api.effectiveStats().DEX, 8);
+equal("実効値: 別武器へ戻しても基礎DEXは変化しない", modRun.api.state.stats.DEX, 8);
+// 装備切替を繰り返しても二重加算されない
+for (let i = 0; i < 10; i += 1) {
+  modRun.api.equip("weapons", "magicSword");
+  modRun.api.equip("weapons", "trainingDagger");
+}
+modRun.api.equip("weapons", "magicSword");
+equal("実効値: 装備切替を繰り返しても補正が二重加算されない", modRun.api.effectiveStats().DEX, 10);
+equal("実効値: 装備切替を繰り返しても基礎値が増えない", modRun.api.state.stats.DEX, 8);
+// 保存・再読込でも基礎値のまま
+const reloadedMod = loadPrototype(file, modRun.store);
+equal("実効値: 再読込しても基礎DEXは8のまま", reloadedMod.api.state.stats.DEX, 8);
+equal("実効値: 再読込後も実効DEXは10", reloadedMod.api.effectiveStats().DEX, 10);
+
+// 戦闘Unitとダメージ計算への接続
+equal("戦闘: 戦闘Unitが実効ステータスを使用する", modRun.api.playerUnit().stats.DEX, 10);
+equal("戦闘: 戦闘Unitは基礎値を直接渡さない",
+  modRun.api.playerUnit().stats.DEX !== modRun.api.state.stats.DEX, true);
+// DEX補正がDEX / AGI補正へ反映される。gapが負なら会心は発生しない
+const agiDefender = unit({ stats: { STR: 0, VIT: 10, DEX: 0, AGI: 28, INT: 0, MND: 3 } });
+const plainSlash = { kind: "physical", attributes: { slash: 1 } };
+const dexBefore = api.actionDamage(baseRun.api.playerUnit(), agiDefender, plainSlash);
+const dexAfter = api.actionDamage(modRun.api.playerUnit(), agiDefender, plainSlash);
+check("戦闘: DEX補正がDEX / AGIダメージ補正へ反映される", dexAfter.damage > dexBefore.damage,
+  `${dexBefore.damage} → ${dexAfter.damage}`);
+check("戦闘: gapが負なら会心は発生しない", dexBefore.critical === false && dexAfter.critical === false);
+// DEX 30（基礎28 + 装備2）対 AGI 0 なら会心率30%。乱数0.29で会心、0.31で非会心になる
+const critRun = magicSwordInstance();
+critRun.api.state.stats.DEX = 28;
+const slowDefender = unit({ stats: { STR: 0, VIT: 10, DEX: 0, AGI: 0, INT: 0, MND: 3 } });
+check("戦闘: DEX補正が会心判定へ反映される",
+  withRolls([0.29], () => api.actionDamage(critRun.api.playerUnit(), slowDefender, plainSlash)).critical === true);
+check("戦闘: 会心率を超える乱数では会心しない",
+  withRolls([0.31], () => api.actionDamage(critRun.api.playerUnit(), slowDefender, plainSlash)).critical === false);
+// STR / VITの補正も同じ集計経路を通る（テスト用の仮データで確認）
+const strRun = loadPrototype(file, {});
+strRun.api.CONFIG.battle.equipment.armors.find((entry) => entry.id === "travelerClothes").parameterModifiers = { STR: 3, VIT: -1 };
+equal("実効値: STR / VITの補正も同じ集計経路で扱える",
+  `${strRun.api.effectiveStats().STR},${strRun.api.effectiveStats().VIT}`, "13,9");
+delete strRun.api.CONFIG.battle.equipment.armors.find((entry) => entry.id === "travelerClothes").parameterModifiers;
+
+// 装備強化はパラメータ補正を増幅しない
+const enhanceMod = magicSwordInstance();
+withRolls(Array.from({ length: 10 }, () => 0.005),
+  () => enhanceMod.api.enhanceEquipment("weapons", "magicSword", 10));
+equal("装備強化: +10でも基礎ATKだけが増える", enhanceMod.api.weaponAtk(), api.enhancedValue(25, 10));
+equal("装備強化: パラメータ補正は増幅されない",
+  JSON.stringify(enhanceMod.api.equippedParameterModifiers()), JSON.stringify({ DEX: 2 }));
+equal("装備強化: +10でも実効DEXは10のまま", enhanceMod.api.effectiveStats().DEX, 10);
+
+/* ---------- Ability条件は基礎ステータスだけを参照する（Issue #131） ---------- */
+equal("Ability条件: 斬撃術の検証用条件は基礎DEX8以上",
+  JSON.stringify(api.abilityStatRequirements("slashTraining")), JSON.stringify({ DEX: 8 }));
+check("Ability条件: 初期状態（基礎DEX8）では条件を満たす", baseRun.api.meetsAbilityStats("slashTraining"));
+// 初期APは0のため、パラメータ条件だけを見るテストではAPを与えてから判定する
+baseRun.api.state.skillPoints = 1;
+check("Ability条件: 基礎DEX8・AP1ならLvを上げられる", baseRun.api.canRaiseAbility("slashTraining"));
+
+// 基礎DEX7 + 装備DEX+2 = 実効DEX9 でも条件未達
+const belowRun = magicSwordInstance();
+belowRun.api.state.stats.DEX = 7;
+belowRun.api.state.skillPoints = 1;  // AP不足ではなくパラメータ条件で止まることを確かめる
+equal("Ability条件: 基礎DEX7でも実効DEXは9", belowRun.api.effectiveStats().DEX, 9);
+check("Ability条件: 実効DEX9でも基礎DEX8条件を満たさない",
+  belowRun.api.meetsAbilityStats("slashTraining") === false);
+check("Ability条件: 装備補正だけではAbility Lvを上げられない",
+  belowRun.api.canRaiseAbility("slashTraining") === false);
+const belowLevel = belowRun.api.abilityLevel("slashTraining");
+const belowAp = belowRun.api.state.skillPoints;
+belowRun.api.raiseAbility("slashTraining");
+equal("Ability条件: 条件未達ではAbility Lvが上がらない", belowRun.api.abilityLevel("slashTraining"), belowLevel);
+equal("Ability条件: 条件未達ではAPを消費しない", belowRun.api.state.skillPoints, belowAp);
+
+// 基礎DEXを8へ戻すと条件を満たす
+belowRun.api.state.stats.DEX = 8;
+check("Ability条件: 基礎DEX8なら条件を満たす", belowRun.api.meetsAbilityStats("slashTraining"));
+check("Ability条件: 基礎DEX8ならAbility Lvを上げられる", belowRun.api.canRaiseAbility("slashTraining"));
+
+// 既存のAP不足・最大Lv条件を壊していない
+const apRun = loadPrototype(file, {});
+apRun.api.state.skillPoints = 0;
+check("Ability条件: AP不足では上げられない（既存条件）", apRun.api.canRaiseAbility("slashTraining") === false);
+apRun.api.state.skillPoints = 2;
+apRun.api.raiseAbility("slashTraining");
+equal("Ability: AP1消費でLv+1（既存動作）", apRun.api.abilityLevel("slashTraining"), 1);
+equal("Ability: AP消費が1（既存動作）", apRun.api.state.skillPoints, 1);
+check("Ability: 閾値到達でSkillを習得する（既存動作）",
+  apRun.api.actionsFor(apRun.api.state.abilities).some((action) => action.id === "skill"));
+check("Ability: 最大Lvでは上げられない（既存条件）", apRun.api.canRaiseAbility("slashTraining") === false);
+
+// UI
+const statusUi = magicSwordInstance();
+statusUi.api.render();
+const statusHtml = statusUi.api.statusBodyHtml();
+check("ステータスUI: 基礎値と装備補正を区別して表示する", /8<span class="stat-modifier"> \(\+2\)<\/span>/.test(statusHtml),
+  statusHtml.slice(statusHtml.indexOf("DEX") - 40, statusHtml.indexOf("DEX") + 160));
+equal("ステータスUI: 補正のないステータスへ(+0)を出さない", (statusHtml.match(/stat-modifier/g) || []).length, 1);
+const abilityHtml = statusUi.api.abilityBodyHtml();
+check("Ability UI: パラメータ条件が基礎値基準だと分かる表示がある",
+  /条件：基礎DEX 8以上/.test(abilityHtml), abilityHtml.slice(0, 400));
+check("Ability UI: 基礎値基準であることを注記する", /装備補正を含まない基礎値/.test(abilityHtml));
+const unmetUi = magicSwordInstance();
+unmetUi.api.state.stats.DEX = 7;
+unmetUi.api.state.skillPoints = 1;
+const unmetHtml = unmetUi.api.abilityBodyHtml();
+check("Ability UI: 条件未達を示す", /未達/.test(unmetHtml) && /ability-requirement unmet/.test(unmetHtml),
+  unmetHtml.slice(0, 400));
+check("Ability UI: 条件未達ではLv上昇ボタンを無効化する",
+  /data-ability="slashTraining" disabled/.test(unmetHtml));
+
+// 旧セーブ互換
+const legacyStats = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({
+    gold: 50, stats: { STR: 12, VIT: 11, DEX: 9, AGI: 8, INT: 8, MND: 8 },
+    ownedEquipment: ["trainingDagger", "ironDagger", "travelerClothes"],
+    equippedWeapon: "ironDagger", equippedArmor: "travelerClothes", skillPoints: 1,
+  }),
+});
+equal("旧セーブ: 基礎ステータスをそのまま保持する", legacyStats.api.state.stats.DEX, 9);
+equal("旧セーブ: 補正のない装備なら実効値は基礎値と一致する",
+  statsText(legacyStats.api.effectiveStats()), statsText(legacyStats.api.state.stats));
+check("旧セーブ: マジックソードを自動付与しない",
+  legacyStats.api.state.ownedEquipment.includes("magicSword") === false);
+check("旧セーブ: 基礎DEX9ならAbility条件を満たす", legacyStats.api.canRaiseAbility("slashTraining"));
 
 /* ---------- 第1層ボス戦（Issue #105 / PROTOTYPE ASSUMPTION） ---------- */
 const bossEnemy = CONFIG.battle.bosses.find((entry) => entry.id === "goblinWarlord");
