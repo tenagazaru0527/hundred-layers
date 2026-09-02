@@ -30,6 +30,7 @@ const EXPORTS = [
   "debug", "debugBattle", "debugRestore", "summaryText", "writeBattleTurns",
   "normalizeVerificationUnits", "verificationUnitsValue", "setVerificationUnits", "verificationCost",
   "exploreVerification", "explorationDistribution", "verificationHtml", "verificationSummaryHtml",
+  "verificationRunnable", "verificationWarningText",
   "dungeon", "interruptReasonText",
   "maxSatiety", "normalizeSatiety", "consumeSatiety", "planSatietyRecovery",
   "applySatietyRecovery", "supplySatiety", "satietyLogText",

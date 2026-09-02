@@ -1104,7 +1104,8 @@ rangeInput.value = "30";
 rangeInput.oninput();
 equal("回数UI: スライダー変更が数値入力へ反映される", String(countInput.value), "30");
 equal("回数UI: スライダー変更が保持値へ反映される", verifyUi.api.verificationUnitsValue(), 30);
-equal("回数UI: 消費スタミナ表示も追従する", costLabel.textContent, 30 * CONFIG.exploration.staminaPerEvent);
+equal("回数UI: 消費スタミナ表示も追従する", costLabel.textContent,
+  api.formatStamina(30 * CONFIG.exploration.staminaPerEvent));
 countInput.value = "85";
 countInput.onchange();
 equal("回数UI: 数値入力変更がスライダーへ反映される", String(rangeInput.value), "85");
@@ -1261,6 +1262,107 @@ check("回帰: 通常の投入スタミナ選択肢を維持する",
   CONFIG.explorationCosts.join(","));
 check("回帰: 通常の探索開始ボタンを維持する", /id="explore"/.test(normalUi.elements.screen.innerHTML));
 equal("回帰: 探索ログ上限を変更しない", CONFIG.logLimit, 60);
+
+/* ---------- 検証用連続探索の実行可否（PR #140 レビュー対応） ---------- */
+// 現在スタミナを指定量まで絞る。accruedStaminaは経過時間で増えるため、都度計算して差し引く
+function withStamina(instance, stamina) {
+  instance.api.state.staminaSpent = Math.max(0, instance.api.accruedStamina() - stamina);
+  return instance;
+}
+function verifyGateInstance(stamina, options = {}) {
+  const instance = loadPrototype(file, {});
+  instance.api.state.location = options.location || "forest";
+  instance.api.state.satiety = instance.api.maxSatiety();
+  if (options.hp !== undefined) instance.api.state.currentHp = options.hp;
+  return withStamina(instance, stamina);
+}
+const unitCost = CONFIG.exploration.staminaPerEvent;
+
+// 必要スタミナと実行可否
+const shortRun = verifyGateInstance(100);
+check("実行可否: 必要スタミナ不足では実行できない",
+  shortRun.api.verificationRunnable(50) === false,
+  `必要 ${shortRun.api.verificationCost(50)} / 現在 ${shortRun.api.currentStamina()}`);
+check("実行可否: 必要スタミナが足りていれば実行できる",
+  shortRun.api.verificationRunnable(10) === true,
+  `必要 ${shortRun.api.verificationCost(10)} / 現在 ${shortRun.api.currentStamina()}`);
+// explore() と同じ境界（cost <= currentStamina）で判定する
+const boundaryRun = verifyGateInstance(10 * unitCost);
+check("実行可否: ちょうど必要量なら実行できる", boundaryRun.api.verificationRunnable(10) === true);
+check("実行可否: 1回分でも超過すると実行できない", boundaryRun.api.verificationRunnable(11) === false);
+
+// 実際に実行させない
+const beforeResult = shortRun.api.state.lastResult;
+const blocked = shortRun.api.exploreVerification(50);
+equal("実行可否: スタミナ不足では連続探索を実行しない", blocked, null);
+equal("実行可否: スタミナ不足では直前の探索結果を書き換えない", shortRun.api.state.lastResult, beforeResult);
+equal("実行可否: スタミナ不足ではスタミナを消費しない",
+  shortRun.api.verificationRunnable(50), false);
+check("実行可否: 実行できない理由をログへ残す",
+  shortRun.api.state.systemLog.some((entry) => /実行できない/.test(entry.message) && /スタミナが不足/.test(entry.message)),
+  JSON.stringify(shortRun.api.state.systemLog.map((entry) => entry.message)));
+// 十分なスタミナがあれば実行される
+const enoughRun = verifyGateInstance(20 * unitCost);
+const enoughResult = enoughRun.api.exploreVerification(10);
+check("実行可否: 必要スタミナが足りていれば連続探索を実行する", Boolean(enoughResult));
+equal("実行可否: 実行時は指定回数を処理する", enoughResult.summary.plannedEvents, 10);
+
+// HP0・作戦不正でも実行できない
+const deadRun = verifyGateInstance(100 * unitCost, { hp: 0 });
+check("実行可否: HP0では実行できない", deadRun.api.verificationRunnable(10) === false);
+equal("実行可否: HP0では連続探索を実行しない", deadRun.api.exploreVerification(10), null);
+const tacticsRun = verifyGateInstance(100 * unitCost);
+check("実行可否: 作戦が不正なら実行できない",
+  tacticsRun.api.verificationRunnable(10, false) === false);
+tacticsRun.api.state.tactics = { attack: 10, firstAid: 10 };
+check("実行可否: 不正なtacticsでは実行できない", tacticsRun.api.verificationRunnable(10) === false);
+equal("実行可否: 不正なtacticsでは連続探索を実行しない", tacticsRun.api.exploreVerification(10), null);
+// 街では実行できない
+const townRun = verifyGateInstance(100 * unitCost, { location: "town" });
+check("実行可否: ダンジョン以外では実行できない", townRun.api.verificationRunnable(10) === false);
+
+// UIのdisabledと警告表示
+const gateUi = verifyGateInstance(100);
+gateUi.api.setVerificationUnits(50);
+gateUi.api.render();
+check("実行可否UI: スタミナ不足ならボタンをdisabledにする",
+  /id="verifyRun" disabled/.test(gateUi.elements.screen.innerHTML), gateUi.elements.screen.innerHTML.slice(-400));
+check("実行可否UI: 必要量と現在量が分かる警告を出す",
+  new RegExp(`必要 ⚡${api.formatStamina(50 * unitCost)}`).test(gateUi.elements.screen.innerHTML)
+  && /スタミナが不足しています/.test(gateUi.elements.screen.innerHTML),
+  gateUi.api.verificationWarningText(50));
+check("実行可否UI: スタミナ不足の警告を表示状態にする",
+  /id="verifyWarning" hidden/.test(gateUi.elements.screen.innerHTML) === false,
+  (gateUi.elements.screen.innerHTML.match(/id="verifyWarning"[^>]*>/g) || []).join(","));
+// 回数を下げるとdisabledと警告が解除される
+const gateRange = gateUi.elements.verifyRange;
+gateRange.value = "5";
+gateRange.oninput();
+equal("実行可否UI: 回数を下げるとボタンが有効になる", gateUi.elements.verifyRun.disabled, false);
+equal("実行可否UI: 回数を下げると警告を隠す", gateUi.elements.verifyWarning.hidden, true);
+// 回数を上げると再びdisabledになる
+const gateCount = gateUi.elements.verifyCount;
+gateCount.value = "60";
+gateCount.onchange();
+equal("実行可否UI: 回数を上げるとボタンをdisabledへ戻す", gateUi.elements.verifyRun.disabled, true);
+equal("実行可否UI: 回数を上げると警告を表示する", gateUi.elements.verifyWarning.hidden, false);
+check("実行可否UI: 警告文へ必要量と現在量を出す",
+  /必要 ⚡/.test(gateUi.elements.verifyWarning.textContent)
+  && /現在 ⚡/.test(gateUi.elements.verifyWarning.textContent),
+  gateUi.elements.verifyWarning.textContent);
+// 十分なスタミナがあるインスタンスでは最初から有効
+const gateOkUi = verifyGateInstance(100 * unitCost);
+gateOkUi.api.setVerificationUnits(50);
+gateOkUi.api.render();
+check("実行可否UI: スタミナが足りていればボタンを有効にする",
+  /id="verifyRun" disabled/.test(gateOkUi.elements.screen.innerHTML) === false);
+check("実行可否UI: スタミナが足りていれば警告を隠す",
+  /id="verifyWarning" hidden/.test(gateOkUi.elements.screen.innerHTML));
+// HP0では通常探索と同じくdisabled
+const gateDeadUi = verifyGateInstance(100 * unitCost, { hp: 0 });
+gateDeadUi.api.render();
+check("実行可否UI: HP0ではボタンをdisabledにする",
+  /id="verifyRun" disabled/.test(gateDeadUi.elements.screen.innerHTML));
 
 /* ---------- 強敵直接テストと継戦性サマリー（Issue #80） ---------- */
 const dbg = loadPrototype(file, {});
