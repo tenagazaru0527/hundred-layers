@@ -1,65 +1,83 @@
 {
-  "updatedAt": "2026-08-29T18:58:16+09:00",
+  "updatedAt": "2026-09-03T00:00:13+09:00",
   "baseCommit": {
-    "sha": "a677a4d48999f41cacbe646639c8d8fb5ac6da3a",
-    "url": "https://github.com/tenagazaru0527/hundred-layers/commit/a677a4d48999f41cacbe646639c8d8fb5ac6da3a"
+    "sha": "2dd4427f1d488b02c79a7a63be75853293fbbb4c",
+    "url": "https://github.com/tenagazaru0527/hundred-layers/commit/2dd4427f1d488b02c79a7a63be75853293fbbb4c"
   },
   "lastPullRequest": {
-    "number": 108,
-    "title": "直近のボス戦結果から折りたたみで戦闘詳細を確認できるようにする",
-    "url": "https://github.com/tenagazaru0527/hundred-layers/pull/108"
+    "number": 144,
+    "title": "docs: 工房の投入倍率が判断として成立するかシミュレーションで検証する",
+    "url": "https://github.com/tenagazaru0527/hundred-layers/pull/144"
   },
   "current": {
-    "theme": "装備強化と第1層ボス戦を接続し、成長・装備差を実戦で評価できる段階",
-    "summary": "Goldを再投資する装備強化の最小Prototypeと、ゴブリン・ウォーロードとの実戦闘を接続しました。通常探索は満腹度が十分な間は余裕が大きく、強化の攻略価値を評価しにくい一方、ボス戦では成長・装備差が戦闘時間や終了時の余力へ明確に表れました。ただし、この差はLv・装備ベース・強化段階を含む総合的な戦力差であり、強化単独の寄与とは断定していません。装備強化の成功方式・成功率・費用・性能倍率と、正式なボス戦全体仕様は未決です。",
+    "theme": "探索構造・装備基盤・工房の最小縦切りを接続し、次の検証対象を全体から再選定する段階",
+    "summary": "第2層への最小遷移、武器ごとの通常攻撃属性と耐性重み付け、装備パラメータ補正、探索一次抽選と素材ドロップ、検証用連続探索、原木→木材の最小工房までPrototypeへ接続しました。探索→素材取得→加工という生産側の入口は成立しましたが、木材の次用途、正式な素材品質・工房UI、探索危険度、装備OPや多層構造の正式方式は未決です。工房の可変投入倍率は線形成功率だけでは判断が弱いと整理し、現時点では実装を保留しています。",
     "primaryIssue": {
-      "label": "PR #108 ボス戦詳細ログ Human Verification",
-      "url": "https://github.com/tenagazaru0527/hundred-layers/pull/108"
+      "label": "PR #144 工房投入倍率シミュレーション",
+      "url": "https://github.com/tenagazaru0527/hundred-layers/pull/144"
     },
-    "decisionPoint": "PR #108の折りたたみ詳細をHuman Verificationし、装備強化とボス戦で得た所感を整理して、通常探索の余裕・強化方式・ボス戦拡張のどれを次の仮説として検証するか1つ選ぶ。"
+    "decisionPoint": "次は工房を横に広げず、探索危険度の再検証、木材を次工程へ接続する縦切り、装備・戦闘側の未決事項のうち、現在もっとも検証価値が高い仮説を1つ選ぶ。"
   },
   "progressSinceLastUpdate": [
     {
-      "title": "装備強化と装備育成循環の候補を整理",
-      "summary": "段階強化、Goldを主要コストとする強化、装備OP、鍛造・調律・共鳴・分解を含む育成循環を有力案・候補として整理しました。装備強化の成功方式や数値、各鍛冶機能、レアリティ、OP枠数などは正式仕様ではなく、育成循環全体をPrototypeへ一括実装もしません。",
+      "title": "第2層への最小遷移を接続",
+      "summary": "ウォーロード撃破による第2層解放と、現在階層・現在ロケーションを分離した最小遷移をPrototypeへ接続しました。第2層は仮入口だけで、正式な多層state、入口管理、階層選択UI、第2層コンテンツは未決です。",
       "links": [
         {
-          "label": "PR #100",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/100"
+          "label": "PR #112",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/112"
+        }
+      ]
+    },
+    {
+      "title": "武器属性・耐性・装備補正の基盤を縦切り検証",
+      "summary": "通常攻撃属性を武器データへ接続し、複数属性攻撃の耐性を属性構成比で重み付けする候補式をPrototypeへ反映しました。さらに基礎ステータスと装備込み実効ステータスを分離し、Ability条件は基礎値だけを見る経路を確認しました。正式な属性配分、耐性式、装備補正値、サブ装備・二刀流・OPは未決です。",
+      "links": [
+        {
+          "label": "PR #126",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/126"
         },
         {
-          "label": "PR #103",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/103"
+          "label": "PR #130",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/130"
+        },
+        {
+          "label": "PR #132",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/132"
         }
       ]
     },
     {
-      "title": "装備強化をGold再投資の最小Prototypeとして実装",
-      "summary": "+0～+10、失敗時の消失・強化値低下なし、1 / 10 / 50 / 100回の連続鍛錬を仮値で実装しました。Human VerificationではGoldを投入して段階的に育てる操作・育成感は肯定的でしたが、通常探索では戦力差を評価しにくく、成功方式・成功率・費用・性能倍率は未決です。",
+      "title": "探索を排他一次抽選と素材ドロップへ再構成",
+      "summary": "探索1単位を「アイテムドロップ／モンスター遭遇／イベント／失敗／進行」の排他5カテゴリへ分離し、進行だけが踏破率を進める構造へ変更しました。素材ドロップはランク→素材の2段階抽選です。検証用1〜100回連続探索と分布サマリーも追加し、森は進みやすく戦闘が少ない差を確認しましたが、巣穴の危険度差は弱く、満腹度による戦闘後回復がリスクを吸収している可能性を残しています。",
       "links": [
         {
-          "label": "PR #104",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/104"
+          "label": "PR #139",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/139"
+        },
+        {
+          "label": "PR #140",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/140"
         }
       ]
     },
     {
-      "title": "ゴブリン・ウォーロードを第1層ボス戦として実戦化",
-      "summary": "巣穴100%からウォーロード戦、勝利時の第2層解放までを既存の戦闘基盤へ接続しました。Human Verificationとシミュレーションでは成長・装備差が勝敗、ターン数、終了HPへ表れましたが、Lv・装備ベース・強化段階が同時に異なる比較を強化単独の効果とは扱いません。現在の能力値・行動・挑戦条件・報酬は最小Prototypeの仮実装です。",
+      "title": "探索素材から工房加工までの最小ループを接続",
+      "summary": "探索で得た原木を、タグ＋Prototype上のランク相当条件で解決し、普通／上質／希少な木材へ加工する最小工房を実装しました。作成回数の数値入力、必要数・作成予定、所持数不足時の拒否、保存復元まで接続し、ポプラの原木とアルンの原木でHuman Verificationを問題なく完了しました。正式な工房UI、素材品質体系、木材の次用途は未決です。",
       "links": [
         {
-          "label": "PR #106",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/106"
+          "label": "PR #142",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/142"
         }
       ]
     },
     {
-      "title": "直近のボス戦から戦闘詳細を確認可能に改善",
-      "summary": "直近のボス戦要約の下へ、実際の戦闘結果を再利用した折りたたみ詳細を追加しました。再計算や再シミュレーションは行わず、直近1戦のみを表示します。ボス戦ロジック・バランス・報酬・進行は変更しておらず、折りたたみ詳細のHuman Verificationは未実施です。",
+      "title": "工房の可変投入倍率を実装前にシミュレーション",
+      "summary": "線形成功率ではClamp前の期待素材効率が投入倍率によらず一定で、主な差は分散・前払い必要量・端数になることを確認しました。Hundred Layersとしては「分散だけを選ばせるUI」の検証優先度は低いと判断し、可変倍率UIと100%未満加工のPrototype実装を保留しました。現在の工房はinputMultiplier=1固定を維持します。",
       "links": [
         {
-          "label": "PR #108",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/108"
+          "label": "PR #144",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/144"
         }
       ]
     }
@@ -69,15 +87,39 @@
       "name": "探索・帰還・準備の基本ループ",
       "implementationStatus": "検証中",
       "specificationStatus": "Prototype仮採用",
-      "note": "スタミナ投入、連続探索、HP / MP持越し、宿屋、素材換金、装備変更、満腹度による戦闘間回復まで接続済み。満腹度が十分な間は通常探索で死亡しにくく、通常探索だけでは成長・装備差や強化の攻略価値を評価しづらい状態です。探索ループ自体の面白さも未決です。",
+      "note": "スタミナ投入、HP / MP持越し、宿屋、満腹度による戦闘間回復、ロケーション進行まで接続済みです。一次抽選の再構成で森は進みやすくなりましたが、巣穴との危険度差はHuman Verificationで弱く、満腹度・探索負荷の正式バランスは未決です。",
       "links": [
+        {
+          "label": "PR #139",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/139"
+        },
         {
           "label": "Prototype設計",
           "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/PROTOTYPE.md"
-        },
+        }
+      ]
+    },
+    {
+      "name": "探索一次抽選と素材ドロップ",
+      "implementationStatus": "検証中",
+      "specificationStatus": "Prototype仮採用",
+      "note": "1探索処理単位につき5カテゴリのうち1つだけが成立し、探索進行だけが踏破率を進めます。アイテムドロップはRare / Uncommon / Commonのランク抽選後に素材を選ぶ2段階方式です。正式な確率、装備探索ドロップ、戦闘報酬との統合は未決です。",
+      "links": [
         {
-          "label": "PR #92 Human Verification",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/92"
+          "label": "PR #139",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/139"
+        }
+      ]
+    },
+    {
+      "name": "検証用連続探索と分布サマリー",
+      "implementationStatus": "実装済み",
+      "specificationStatus": "Prototype仮採用",
+      "note": "通常探索とは別に、同じexplore処理を1〜100回繰り返し、一次カテゴリ・ドロップランク・取得アイテムを集計できる検証支援UIを追加済みです。正式ゲームUIとして残すかは未決です。",
+      "links": [
+        {
+          "label": "PR #140",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/140"
         }
       ]
     },
@@ -85,83 +127,15 @@
       "name": "満腹度による戦闘間回復",
       "implementationStatus": "検証中",
       "specificationStatus": "Prototype仮採用",
-      "note": "通常探索では戦闘後に満腹度を使ってHP / MPを回復します。Human Verificationでは満腹度が十分な間は全回復し、探索中はほぼ死亡しない挙動を許容しました。最大値、減少量、回復／補給方法、敗北後の正式ルールはいずれも未決です。",
+      "note": "通常探索では戦闘後に満腹度を使ってHP / MPを回復します。探索継続を成立させる一方、巣穴の戦闘頻度が高くても危険度差を吸収している可能性があります。最大値、消費量、補給方法、敗北処理は正式未決です。",
       "links": [
         {
-          "label": "PR #90 Human Verification",
+          "label": "PR #90",
           "url": "https://github.com/tenagazaru0527/hundred-layers/pull/90"
-        }
-      ]
-    },
-    {
-      "name": "探索結果UI",
-      "implementationStatus": "検証中",
-      "specificationStatus": "Prototype仮採用",
-      "note": "報酬・成長を先に表示し、戦闘詳細を初期状態で閉じる構造を導入済み。獲得内容とLvUP時の成長は把握しやすくなりましたが、探索イベント詳細の長さと次行動への動機は改善余地が残ります。",
-      "links": [
-        {
-          "label": "PR #92 Human Verification",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/92"
-        }
-      ]
-    },
-    {
-      "name": "装備強化",
-      "implementationStatus": "検証中",
-      "specificationStatus": "Prototype仮採用",
-      "note": "+0～+10、失敗時の装備消失・強化値低下なし、連続鍛錬を仮値で実装済み。操作・育成感は肯定的で、ボス戦では成長・装備差を確認しやすくなりました。確率成功方式そのもの、成功率、Gold費用、性能倍率は正式未決です。",
-      "links": [
-        {
-          "label": "PR #104 Human Verification",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/104"
         },
         {
-          "label": "PR #106 ボス戦検証",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/106"
-        }
-      ]
-    },
-    {
-      "name": "装備OP・鍛冶育成循環",
-      "implementationStatus": "未実装",
-      "specificationStatus": "有力案",
-      "note": "装備を拾い、育て、被りを活かし、不要装備を分解して次の育成へ投資する循環を中心候補として保持しています。通常OPの完全同一重複不可と旧投資を循環させる方向は有力案ですが、鍛造・強化・調律・共鳴・分解の役割、レアリティ、装備スロット、OP枠数、抽選率などは候補・未決です。",
-      "links": [
-        {
-          "label": "PR #103",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/103"
-        }
-      ]
-    },
-    {
-      "name": "第1層の世界進行",
-      "implementationStatus": "実装済み",
-      "specificationStatus": "Prototype仮採用",
-      "note": "森→巣穴→ボス解放→第2層解放をローカルworldStateで再現し、Human Verificationで現在地・次の行動・解放導線が伝わることを確認済み。正式なオンライン共有は未実装です。",
-      "links": [
-        {
-          "label": "PR #77",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/77"
-        },
-        {
-          "label": "PR #79 HV",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/79"
-        }
-      ]
-    },
-    {
-      "name": "作戦型オートバトル",
-      "implementationStatus": "検証中",
-      "specificationStatus": "Prototype仮採用",
-      "note": "3種の作戦でUtility評価を比較可能。Human Verificationで作戦による違いは確認済みですが、正式な作戦方式・種類・Score式は未決です。",
-      "links": [
-        {
-          "label": "PR #75",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/75"
-        },
-        {
-          "label": "Decision D-005",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/DECISIONS.md#d-005-プレイヤー作戦型utility-aiを比較検証する"
+          "label": "PR #139",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/139"
         }
       ]
     },
@@ -169,27 +143,87 @@
       "name": "AbilityからSkillを習得する育成構造",
       "implementationStatus": "検証中",
       "specificationStatus": "確定",
-      "note": "基本パラメータ→Ability→Skillの構造は正式採用。Prototypeでは斬撃術と強打だけの最小縦切りで、AbilityやSkillの種類・数値は仮です。",
+      "note": "基本パラメータ→Ability→Skillの構造は正式採用。Prototypeでは斬撃術と強打だけの最小縦切りで、AbilityやSkillの種類・数値は仮です。装備パラメータ補正はAbility条件に加味しない経路をPrototypeで確認済みです。",
       "links": [
         {
           "label": "PR #72",
           "url": "https://github.com/tenagazaru0527/hundred-layers/pull/72"
         },
         {
-          "label": "Decision D-002",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/DECISIONS.md#d-002-ability-lv到達時にskillを自動習得する"
+          "label": "PR #132",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/132"
         }
       ]
     },
     {
-      "name": "ロケーション別コンテンツ",
-      "implementationStatus": "実装済み",
+      "name": "作戦型オートバトル",
+      "implementationStatus": "検証中",
       "specificationStatus": "Prototype仮採用",
-      "note": "森と巣穴で敵・強敵・探索イベント・報酬を分離し、Human Verificationで別ロケーションとして感じられることを確認済み。出現率とバランスは仮値です。",
+      "note": "3種の作戦とUtility評価を比較可能です。作戦による行動差は確認済みですが、正式な作戦方式・種類・Score式は未決です。",
       "links": [
         {
-          "label": "PR #79",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/79"
+          "label": "PR #75",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/75"
+        }
+      ]
+    },
+    {
+      "name": "武器ごとの通常攻撃属性と耐性処理",
+      "implementationStatus": "検証中",
+      "specificationStatus": "Prototype仮採用",
+      "note": "通常攻撃は装備武器の属性配分を参照し、SkillはSkill自身の属性を使います。複数属性への耐性は属性構成比で重み付けする候補式をPrototypeへ反映済みです。正式な武器属性配分、耐性式、弱点・上下限は未決です。",
+      "links": [
+        {
+          "label": "PR #126",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/126"
+        },
+        {
+          "label": "PR #130",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/130"
+        }
+      ]
+    },
+    {
+      "name": "装備パラメータ補正",
+      "implementationStatus": "検証中",
+      "specificationStatus": "Prototype仮採用",
+      "note": "基礎ステータスと装備込み実効ステータスを分離し、通常戦闘は実効値、Ability条件は基礎値だけを参照する最小経路を実装済みです。正式な補正値、派生値補正、OP・一時効果との合成順は未決です。",
+      "links": [
+        {
+          "label": "PR #132",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/132"
+        }
+      ]
+    },
+    {
+      "name": "装備強化",
+      "implementationStatus": "検証中",
+      "specificationStatus": "Prototype仮採用",
+      "note": "+0〜+10、失敗時の装備消失・強化値低下なし、連続鍛錬を仮値で実装済みです。操作・育成感は確認できていますが、確率成功方式、成功率、Gold費用、性能倍率は正式未決です。",
+      "links": [
+        {
+          "label": "PR #104",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/104"
+        },
+        {
+          "label": "PR #106",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/106"
+        }
+      ]
+    },
+    {
+      "name": "第1層進行と第2層への最小遷移",
+      "implementationStatus": "検証中",
+      "specificationStatus": "Prototype仮採用",
+      "note": "アルンの森→ゴブリンの巣穴→ウォーロード→第2層解放に加え、解放後に第2層の仮入口へ移動し第1層へ戻れる最小構造を実装済みです。第2層コンテンツ、正式な多層state、階層選択UIは未決です。",
+      "links": [
+        {
+          "label": "PR #77",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/77"
+        },
+        {
+          "label": "PR #112",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/112"
         }
       ]
     },
@@ -197,7 +231,7 @@
       "name": "第1層ボス戦",
       "implementationStatus": "検証中",
       "specificationStatus": "Prototype仮採用",
-      "note": "巣穴100%からゴブリン・ウォーロードとの実戦闘へ進み、勝利時に第1層クエスト完了と第2層解放まで機能します。現在のHP・能力値・単一行動・挑戦コストなし・専用報酬なしは仮です。複数フェーズ、ギミック、パーティ形式、正式報酬など、正式なボス戦全体仕様は未決です。直近の戦闘詳細UIは追加済みですがHuman Verificationは未実施です。",
+      "note": "巣穴100%からゴブリン・ウォーロードとの実戦闘へ進み、勝利時に第1層クエスト完了と第2層解放まで機能します。成長・装備差が戦闘結果へ表れることは確認済みですが、能力値・行動・挑戦条件・報酬・複数フェーズ等の正式なボス戦仕様は未決です。",
       "links": [
         {
           "label": "PR #106",
@@ -210,10 +244,42 @@
       ]
     },
     {
+      "name": "工房（原木→木材）",
+      "implementationStatus": "検証中",
+      "specificationStatus": "Prototype仮採用",
+      "note": "探索で得た原木をタグ＋ランク相当条件で解決し、普通／上質／希少な木材へ加工する最小ループを実装済みです。Human Verificationではポプラ／アルンの原木で問題なく操作できました。inputMultiplierは1固定、成功率100%で、正式UI・品質体系・木材の次用途は未決です。",
+      "links": [
+        {
+          "label": "PR #142",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/142"
+        },
+        {
+          "label": "PR #144",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/144"
+        }
+      ]
+    },
+    {
+      "name": "装備OP・鍛冶育成循環",
+      "implementationStatus": "未実装",
+      "specificationStatus": "有力案",
+      "note": "装備を拾い、育て、被りを活かし、不要装備を分解して次の育成へ投資する循環を中心候補として保持しています。鍛造・調律・共鳴・分解、OP枠、レアリティ、サブ装備・二刀流などは未実装／未決です。",
+      "links": [
+        {
+          "label": "PR #114",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/114"
+        },
+        {
+          "label": "PR #124",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/124"
+        }
+      ]
+    },
+    {
       "name": "オンライン共有進行",
       "implementationStatus": "未実装",
       "specificationStatus": "確定",
-      "note": "探索成果をロケーション単位で共有する方針は採用済み。現Prototypeは単一ブラウザ内のローカルモックです。",
+      "note": "探索成果をロケーション単位で共有する方針は採用済みです。現Prototypeは単一ブラウザ内のローカルモックで、オンライン共有は未実装です。",
       "links": [
         {
           "label": "ゲーム設計",
@@ -225,11 +291,15 @@
       "name": "生産職のゲームループ",
       "implementationStatus": "未実装",
       "specificationStatus": "未決",
-      "note": "戦闘職の補助だけではない独立した遊びにする方法を、ゲーム全体設計の重要課題として継続検討します。",
+      "note": "工房を探索原材料から中間素材等へ変換する拠点とする方向は有力案で、原木→木材だけをPrototypeへ縦切り済みです。環境・触媒・成功率判断、生産職Lvや独立した攻略目標を含む生産職全体のゲームループは未実装です。",
       "links": [
         {
-          "label": "生産職の未決事項",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/OPEN_QUESTIONS.md#9-p2戦闘職生産職に関する未決事項"
+          "label": "PR #118",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/118"
+        },
+        {
+          "label": "PR #142",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/142"
         }
       ]
     }
@@ -237,93 +307,99 @@
   "shelved": [
     {
       "title": "第1層の追加コンテンツ・ビジュアル候補",
-      "summary": "敵、イベント、背景などの案はIssue #73のアイデアバックログで保持し、現在の検証に必要なものだけを再評価して導入します。バックログ運用自体は確定していますが、各候補の正式採用は意味しません。",
+      "summary": "敵、イベント、背景などの案はIssue #73のアイデアバックログで保持し、現在の検証に必要なものだけを再評価して導入します。各候補の正式採用は意味しません。",
       "links": [
         {
           "label": "Issue #73",
           "url": "https://github.com/tenagazaru0527/hundred-layers/issues/73"
-        },
-        {
-          "label": "Decision D-004",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/DECISIONS.md#d-004-第1層コンテンツ案を正式化せずバックログで保持する"
         }
       ]
     },
     {
       "title": "100%後のねらいうち探索",
-      "summary": "有力案ですが、通常探索継続は成立しているため、現在は継戦性と第1層の基本ループ完成を優先して実装を保留しています。",
+      "summary": "有力案として保持していますが、現在は探索一次抽選・素材取得・工房接続の検証を優先し、専用周回システムの実装は保留しています。",
       "links": [
         {
           "label": "関連する未決事項",
           "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/OPEN_QUESTIONS.md#56-100後のねらいうち探索"
         }
       ]
+    },
+    {
+      "title": "工房の可変投入倍率と100%未満加工",
+      "summary": "線形成功率だけでは期待素材効率が変わらず、主な違いが分散になるため、現時点では倍率UIのPrototype実装を保留しています。別のコスト／リターン軸を追加するか、成功率式自体を変えるかも未決です。",
+      "links": [
+        {
+          "label": "PR #144",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/144"
+        }
+      ]
     }
   ],
   "consultations": [
     {
-      "title": "通常探索の余裕をいつ再検証するか",
-      "summary": "満腹度が十分な間は通常探索で死亡しにくく、成長・装備差や強化の攻略価値を評価しづらい状態です。今すぐ数値調整は行わず、何の仮説を検証する段階で満腹度・スタミナ・探索負荷を再確認するかを判断します。",
+      "title": "ゴブリンの巣穴の危険度をどこで再検証するか",
+      "summary": "一次抽選では巣穴の戦闘・失敗率を森より高くしていますが、Human Verificationでは「より危険」とまでは感じにくい結果でした。満腹度による戦闘後回復が差を吸収している可能性があり、単純な確率変更で隠さず、再検証のタイミングを判断します。",
       "links": [
         {
-          "label": "PR #104 Human Verification",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/104"
+          "label": "PR #139",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/139"
         }
       ]
     },
     {
-      "title": "装備強化方式を後でどう比較するか",
-      "summary": "現在の確率成功方式はPrototype仮値です。確率方式を残すか、確定強化や天井方式などと比較するかは未決であり、操作・育成感の所感と攻略価値の検証を分けて判断します。",
+      "title": "木材を次工程へ接続するか",
+      "summary": "原木→木材の加工は成立しましたが、木材は現時点で装備製作や鍛造等へ使われません。生産ループをさらに1段進める価値はありますが、装備製作仕様をまとめて固定しない最小縦切りにする必要があります。",
       "links": [
         {
-          "label": "PR #100",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/100"
+          "label": "PR #142",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/142"
+        },
+        {
+          "label": "工房候補",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/118"
         }
       ]
     },
     {
-      "title": "最小ボス戦から次に何を検証するか",
-      "summary": "ウォーロード戦で成長・装備差が見えることは確認できました。複数フェーズやギミックなどへ広げる必要があるかは、PR #108のHuman Verificationと既存結果を整理してから判断します。",
+      "title": "次に検証する仮説を全体から再選定する",
+      "summary": "装備・属性基盤、探索素材取得、工房入口まで複数の土台が揃いました。今できる機能を増やすのではなく、探索危険度、木材の用途、装備育成、戦闘仕様などから、次の判断に最も情報価値がある仮説を1つ選びます。",
       "links": [
         {
-          "label": "PR #106 Human Verification",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/106"
+          "label": "OPEN_QUESTIONS",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/OPEN_QUESTIONS.md"
         }
       ]
     }
   ],
   "nextSteps": [
     {
-      "title": "ボス戦の折りたたみ詳細をHuman Verificationする",
-      "summary": "PR #108で追加した直近のボス戦詳細について、要約からターン詳細へ辿れることと、初期状態で閉じた表示に問題がないことを確認します。",
+      "title": "開発状況ページをPages上で確認する",
+      "summary": "本スナップショットのマージ後に、内容・リンク・表示崩れとPrototypeへの戻り導線を確認します。statusページは引き続き手動スナップショットでありSSOTにはしません。",
       "links": [
         {
-          "label": "PR #108",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/108"
+          "label": "Issue #145",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/issues/145"
         }
       ]
     },
     {
       "title": "次の検証仮説を1つ選ぶ",
-      "summary": "装備強化の操作・育成感、通常探索で戦力差を評価しづらい制約、ボス戦で確認できた総合的な戦力差を整理し、次に検証する論点を1つに絞ります。",
+      "summary": "探索危険度の原因分離、木材を次工程へ接続する縦切り、装備・戦闘側の未決事項を比較し、現在もっとも検証価値が高いものだけを次Issueにします。",
       "links": [
         {
-          "label": "PR #104 Human Verification",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/104"
-        },
-        {
-          "label": "PR #106 Human Verification",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/106"
+          "label": "OPEN_QUESTIONS",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/blob/main/docs/OPEN_QUESTIONS.md"
         }
       ]
     },
     {
-      "title": "ボス戦シミュレーターを現状の範囲で維持する",
-      "summary": "ボスが増えるまでは既存のsimulate_boss.jsを維持し、ボスごとの専用シミュレーターは増やしません。複数ボスや比較条件が増えた時点で、汎用戦闘シミュレーター化を検討します。",
+      "title": "保留した工房倍率を無理に実装しない",
+      "summary": "PR #144のB判定を維持し、可変inputMultiplierや100%未満加工は、別の判断軸を検証する明確な目的が出るまでPrototypeへ追加しません。",
       "links": [
         {
-          "label": "PR #106",
-          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/106"
+          "label": "PR #144",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/144"
         }
       ]
     }
