@@ -2343,6 +2343,219 @@ check("旧セーブ: マジックソードを自動付与しない",
   legacyStats.api.state.ownedEquipment.includes("magicSword") === false);
 check("旧セーブ: 基礎DEX9ならAbility条件を満たす", legacyStats.api.canRaiseAbility("slashTraining"));
 
+/* ---------- 工房の原木→木材加工（Issue #141 / PROTOTYPE ASSUMPTION） ---------- */
+const workshop = CONFIG.workshop;
+const recipeIds = workshop.recipes.map((recipe) => recipe.id);
+const workshopItemName = (id) => workshop.items.find((entry) => entry.id === id).name;
+
+// レシピ定義
+equal("工房: 今回のレシピは原木→木材の3本", recipeIds.join(","), "normalWood,fineWood,rareWood");
+for (const recipe of workshop.recipes) {
+  check(`工房: ${recipe.name}のレシピが条件指定材料を使う`,
+    recipe.ingredients.every((ingredient) => ingredient.type === "condition" && ingredient.tag && ingredient.rank),
+    JSON.stringify(recipe.ingredients));
+  equal(`工房: ${recipe.name}の基礎成功率は100%`, recipe.baseSuccessRate, 1);
+  equal(`工房: ${recipe.name}の投入倍率は1固定`, api.recipeInputMultiplier(recipe), 1);
+  equal(`工房: ${recipe.name}の生成は1個`, recipe.outputs.map((o) => o.quantity).join(","), "1");
+}
+check("工房: 材料枠へ個別アイテムIDを直書きしない",
+  workshop.recipes.every((recipe) => recipe.ingredients.every((ingredient) => ingredient.itemId === undefined)));
+// 素材メタデータ（最小限）
+check("工房: 原木3種がlogタグとランク相当値を持つ",
+  ["poplarLog", "arunLog", "walnutLog"].every((id) => {
+    const item = api.workshopItem(id);
+    return item.tags.includes("log") && ["Common", "Uncommon", "Rare"].includes(item.recipeRank);
+  }));
+check("工房: 木材3種を所持アイテムとして扱える",
+  ["normalWood", "fineWood", "rareWood"].every((id) => Boolean(api.workshopItem(id)?.name)));
+check("工房: 価格・重量・食用効果などを持たせない",
+  workshop.items.every((item) => item.gold === undefined && item.weight === undefined && item.food === undefined),
+  JSON.stringify(workshop.items[0]));
+check("工房: 全素材へタグを一括付与していない",
+  api.explorationDropItems().some((name) => workshop.items.every((item) => item.name !== name)));
+check("工房: 木材を所持品一覧へ表示する",
+  ["普通の木材", "上質な木材", "希少な木材"].every((name) => api.itemsBodyHtml().includes(name)));
+
+// matcher
+const commonLog = { type: "condition", tag: "log", rank: "Common", quantity: 1 };
+const uncommonLog = { type: "condition", tag: "log", rank: "Uncommon", quantity: 1 };
+const rareLog = { type: "condition", tag: "log", rank: "Rare", quantity: 1 };
+equal("matcher: Common相当の原木が普通の木材レシピへ一致する",
+  api.ingredientCandidates(commonLog).map((item) => item.id).join(","), "poplarLog");
+equal("matcher: Uncommon相当の原木が上質な木材レシピへ一致する",
+  api.ingredientCandidates(uncommonLog).map((item) => item.id).join(","), "arunLog");
+equal("matcher: Rare相当の原木が希少な木材レシピへ一致する",
+  api.ingredientCandidates(rareLog).map((item) => item.id).join(","), "walnutLog");
+check("matcher: 異なるランク相当の原木は一致しない",
+  api.ingredientCandidates(commonLog).every((item) => item.id !== "arunLog" && item.id !== "walnutLog"));
+equal("matcher: 原木以外の同ランク素材は一致しない",
+  api.ingredientCandidates({ tag: "log", rank: "Common", quantity: 1 })
+    .filter((item) => item.tags.includes("wood")).length, 0);
+check("matcher: タグ不一致は候補にならない",
+  api.ingredientCandidates({ tag: "ore", rank: "Common", quantity: 1 }).length === 0);
+// 所持数0は利用可能扱いにしない
+function workshopInstance(items = {}) {
+  const instance = loadPrototype(file, {});
+  instance.api.state.location = "town";
+  for (const [name, amount] of Object.entries(items)) instance.api.state.items[name] = amount;
+  return instance;
+}
+const craftEmptyRun = workshopInstance();
+equal("matcher: 所持数0の材料は利用可能扱いにならない", craftEmptyRun.api.availableIngredients(commonLog).length, 0);
+equal("matcher: 所持数0なら利用可能数も0", craftEmptyRun.api.ingredientOwned(commonLog), 0);
+equal("matcher: 所持数0では作成可能回数が0", craftEmptyRun.api.maxCraftCount("normalWood"), 0);
+const craftStockRun = workshopInstance({ "ポプラの原木": 3 });
+equal("matcher: 所持している候補だけを利用可能にする",
+  craftStockRun.api.availableIngredients(commonLog).map((item) => item.id).join(","), "poplarLog");
+equal("matcher: 利用可能数は所持数を返す", craftStockRun.api.ingredientOwned(commonLog), 3);
+
+// 消費／生成
+const craftOne = workshopInstance({ "ポプラの原木": 2 });
+const oneResult = craftOne.api.craft("normalWood", 1);
+equal("加工: craftCount=1で原木1個を消費する", craftOne.api.state.items["ポプラの原木"], 1);
+equal("加工: craftCount=1で木材1個を得る", craftOne.api.state.items["普通の木材"], 1);
+equal("加工: 結果へ消費と取得を記録する",
+  `${oneResult.used[0].item}:${oneResult.used[0].amount}/${oneResult.gained[0].item}:${oneResult.gained[0].amount}`,
+  "ポプラの原木:1/普通の木材:1");
+equal("加工: 成功率100%なので指定回数すべて成功する", `${oneResult.success},${oneResult.fail}`, "1,0");
+const craftMany = workshopInstance({ "ポプラの原木": 10 });
+const manyResult = craftMany.api.craft("normalWood", 4);
+equal("加工: craftCount=Nで必要素材数がN倍になる", craftMany.api.state.items["ポプラの原木"], 6);
+equal("加工: craftCount=Nで生成数がN倍になる", craftMany.api.state.items["普通の木材"], 4);
+// recipe基準量 × inputMultiplier(1) × craftCount と実消費数が一致する
+const recipeNormal = api.recipeDef("normalWood");
+equal("加工: recipe基準量 × inputMultiplier × craftCount が実消費数と一致する",
+  manyResult.used[0].amount,
+  recipeNormal.ingredients[0].quantity * api.recipeInputMultiplier(recipeNormal) * 4);
+equal("加工: 必要数の算出式を関数として持つ",
+  api.ingredientRequired(recipeNormal, recipeNormal.ingredients[0], 4), 4);
+equal("加工: 結果へ投入倍率を記録する", manyResult.inputMultiplier, 1);
+// Uncommon / Rare
+const fineRun = workshopInstance({ "アルンの原木": 2 });
+fineRun.api.craft("fineWood", 2);
+equal("加工: Uncommon相当の原木から上質な木材を作る",
+  `${fineRun.api.state.items["アルンの原木"]},${fineRun.api.state.items["上質な木材"]}`, "0,2");
+const rareRun = workshopInstance({ "クルミの原木": 1 });
+rareRun.api.craft("rareWood", 1);
+equal("加工: Rare相当の原木から希少な木材を作る",
+  `${rareRun.api.state.items["クルミの原木"]},${rareRun.api.state.items["希少な木材"]}`, "0,1");
+// 別ランクの原木は使われない
+const mixedRun = workshopInstance({ "ポプラの原木": 1, "アルンの原木": 3 });
+mixedRun.api.craft("normalWood", 1);
+equal("加工: 別ランクの原木を消費しない",
+  `${mixedRun.api.state.items["ポプラの原木"]},${mixedRun.api.state.items["アルンの原木"]}`, "0,3");
+
+// 所持数不足
+const craftShortRun = workshopInstance({ "ポプラの原木": 2 });
+const shortResult = craftShortRun.api.craft("normalWood", 5);
+equal("加工: 所持数不足では加工を拒否する", shortResult, null);
+equal("加工: 拒否時は入力素材を消費しない", craftShortRun.api.state.items["ポプラの原木"], 2);
+equal("加工: 拒否時は出力素材を増やさない", craftShortRun.api.state.items["普通の木材"], undefined);
+check("加工: 拒否理由をログへ残す",
+  craftShortRun.api.state.systemLog.some((entry) => /作成できない/.test(entry.message) && /5 必要/.test(entry.message)),
+  JSON.stringify(craftShortRun.api.state.systemLog.map((entry) => entry.message)));
+equal("加工: 作成可能回数を所持数から求める", craftShortRun.api.maxCraftCount("normalWood"), 2);
+equal("加工: 所持0のレシピは作成可能回数0", craftShortRun.api.maxCraftCount("rareWood"), 0);
+// 実行条件
+const craftDungeonRun = workshopInstance({ "ポプラの原木": 2 });
+craftDungeonRun.api.state.location = "forest";
+equal("加工: 街以外では加工できない", craftDungeonRun.api.craft("normalWood", 1), null);
+equal("加工: 未知のレシピでは加工しない", craftShortRun.api.craft("unknownRecipe", 1), null);
+equal("加工: 0回・負数・非整数では加工しない",
+  `${craftShortRun.api.craft("normalWood", 0)},${craftShortRun.api.craft("normalWood", -1)},${craftShortRun.api.craft("normalWood", 1.5)}`,
+  "null,null,null");
+equal("加工: 不正な回数指定でも素材を消費しない", craftShortRun.api.state.items["ポプラの原木"], 2);
+// 回数の正規化
+equal("加工回数: 所持数を超える指定は作成可能回数へ丸める", craftShortRun.api.normalizeCraftCount("normalWood", 99), 2);
+equal("加工回数: 0以下は1へ丸める", craftShortRun.api.normalizeCraftCount("normalWood", 0), 1);
+equal("加工回数: 小数は整数へ丸める", craftShortRun.api.normalizeCraftCount("normalWood", 1.6), 2);
+equal("加工回数: 非数値は1へ戻す", craftShortRun.api.normalizeCraftCount("normalWood", "abc"), 1);
+equal("加工回数: 素材0なら0を返す", craftShortRun.api.normalizeCraftCount("rareWood", 3), 0);
+
+// 保存・復元
+const craftSaveRun = workshopInstance({ "ポプラの原木": 3 });
+craftSaveRun.api.craft("normalWood", 2);
+const savedItems = JSON.parse(craftSaveRun.store[CONFIG.storageKey] || "{}").items || {};
+equal("保存: 加工後の原木所持数を保存する", savedItems["ポプラの原木"], 1);
+equal("保存: 加工後の木材所持数を保存する", savedItems["普通の木材"], 2);
+const reloadedCraft = loadPrototype(file, craftSaveRun.store);
+equal("保存: reload後も原木所持数を復元する", reloadedCraft.api.state.items["ポプラの原木"], 1);
+equal("保存: reload後も木材所持数を復元する", reloadedCraft.api.state.items["普通の木材"], 2);
+// 旧セーブ互換（工房アイテムを持たないセーブ）
+const legacyCraft = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({ gold: 30, items: { "薬草": 2 }, location: "town" }),
+});
+equal("旧セーブ: 工房アイテムを持たない旧セーブでも読み込める", legacyCraft.api.state.items["薬草"], 2);
+equal("旧セーブ: 未所持の原木は作成可能回数0", legacyCraft.api.maxCraftCount("normalWood"), 0);
+check("旧セーブ: 木材を自動付与しない", legacyCraft.api.state.items["普通の木材"] === undefined);
+
+// UI
+const workshopUi = workshopInstance({ "ポプラの原木": 4 });
+workshopUi.api.setLocationAction("workshop");
+workshopUi.api.render();
+const workshopHtml = workshopUi.elements.screen.innerHTML;
+check("工房UI: 街の行動へ工房を追加する", /data-action="workshop"[^>]*>工房/.test(workshopHtml));
+check("工房UI: レシピ3種を表示する",
+  ["普通の木材", "上質な木材", "希少な木材"].every((name) => workshopHtml.includes(name)));
+check("工房UI: 必要な材料条件を表示する", /Common相当の原木 ×1/.test(workshopHtml));
+check("工房UI: 投入可能な原木と所持数を表示する", /ポプラの原木 ×4/.test(workshopHtml));
+check("工房UI: 作成可能回数を表示する", /作成可能<\/td><td>4 回/.test(workshopHtml), workshopHtml.slice(0, 200));
+check("工房UI: 作成回数の入力を出す", /id="craftCount-normalWood"[^>]*type="number"/.test(workshopHtml));
+check("工房UI: 所持数を超える回数を入力できない", /id="craftCount-normalWood"[^>]*max="4"/.test(workshopHtml));
+check("工房UI: 必要数と作成予定を表示する",
+  /必要数 Common相当の原木 ×1 → 作成予定 普通の木材 ×1/.test(workshopHtml), workshopHtml.slice(0, 300));
+check("工房UI: 素材がないレシピは加工ボタンを無効化する",
+  /data-craft="fineWood" disabled/.test(workshopHtml) && /data-craft="rareWood" disabled/.test(workshopHtml));
+check("工房UI: 素材があるレシピは加工ボタンを有効にする",
+  /data-craft="normalWood" disabled/.test(workshopHtml) === false);
+check("工房UI: Common / Uncommon / Rareが正式品質でない旨を明記する",
+  /正式な素材品質やレアリティではありません/.test(workshopHtml));
+// 作成回数の入力に応じて必要数・作成予定が追従する
+const craftInput = workshopUi.elements["craftCount-normalWood"];
+craftInput.value = "3";
+craftInput.oninput();
+equal("工房UI: 入力に応じて必要数と作成予定が変わる",
+  workshopUi.elements["craftPlan-normalWood"].textContent,
+  "必要数 Common相当の原木 ×3 → 作成予定 普通の木材 ×3");
+craftInput.value = "99";
+craftInput.oninput();
+equal("工房UI: 所持数を超える入力は作成可能回数へ丸める", String(craftInput.value), "4");
+// ボタン経由で加工できる
+workshopUi.api.craftFromButton("normalWood");
+equal("工房UI: ボタン経由で指定回数を加工する",
+  `${workshopUi.api.state.items["ポプラの原木"]},${workshopUi.api.state.items["普通の木材"]}`, "0,4");
+check("工房UI: 直近の加工結果を表示する",
+  /直近の加工結果/.test(workshopUi.elements.screen.innerHTML)
+  && /普通の木材 ×4回（成功 4 ／ 失敗 0）/.test(workshopUi.elements.screen.innerHTML),
+  workshopUi.elements.screen.innerHTML.slice(-400));
+
+// 探索との接続と既存処理への回帰
+const dropToCraft = loadPrototype(file, {});
+dropToCraft.api.state.location = "forest";
+dropToCraft.api.state.satiety = dropToCraft.api.maxSatiety();
+// 一次抽選=アイテムドロップ、ランク=Common、素材=ポプラの原木を固定乱数で引く
+withRolls([0.05, 0.5, 0.2], () => dropToCraft.api.explore(CONFIG.exploration.staminaPerEvent));
+const dropped = dropToCraft.api.state.lastResult.events[0];
+equal("接続: 探索ドロップで原木を取得できる", dropped.primaryCategory, "itemDrop");
+check("接続: 取得した原木が工房の材料になる",
+  Boolean(api.workshopItem(workshop.items.find((item) => item.name === dropped.dropItem)?.id)),
+  dropped.dropItem);
+dropToCraft.api.state.location = "town";
+const dropCraft = dropToCraft.api.craft("normalWood", 1);
+check("接続: 探索で得た原木をそのまま加工できる",
+  Boolean(dropCraft) && dropToCraft.api.state.items["普通の木材"] === 1,
+  JSON.stringify({ dropped: dropped.dropItem, result: dropCraft }));
+// 既存の所持品処理に回帰がない
+const craftRegressRun = workshopInstance({ "ゴブリンの牙": 3, "ポプラの原木": 1 });
+craftRegressRun.api.sell("ゴブリンの牙");
+equal("回帰: 素材換金が従来どおり動く", craftRegressRun.api.state.items["ゴブリンの牙"], 2);
+check("回帰: 換金でGoldが増える", craftRegressRun.api.state.gold > 0);
+check("回帰: 木材を換金対象へ追加しない",
+  CONFIG.materials.list.every((entry) => !["普通の木材", "上質な木材", "希少な木材"].includes(entry.item)));
+check("回帰: 酒場は未実装のまま残す",
+  CONFIG.locations.content !== undefined
+  && /酒場/.test(workshopHtml) && /（未実装）/.test(workshopHtml));
+
 /* ---------- 第1層ボス戦（Issue #105 / PROTOTYPE ASSUMPTION） ---------- */
 const bossEnemy = CONFIG.battle.bosses.find((entry) => entry.id === "goblinWarlord");
 check("ボス: ゴブリン・ウォーロードの敵定義がある", Boolean(bossEnemy));
