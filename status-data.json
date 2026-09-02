@@ -6,7 +6,7 @@
   },
   "lastPullRequest": {
     "number": 144,
-    "title": "工房の投入倍率が判断として成立するかシミュレーションで検証する",
+    "title": "docs: 工房の投入倍率が判断として成立するかシミュレーションで検証する",
     "url": "https://github.com/tenagazaru0527/hundred-layers/pull/144"
   },
   "current": {
@@ -228,6 +228,22 @@
       ]
     },
     {
+      "name": "第1層ボス戦",
+      "implementationStatus": "検証中",
+      "specificationStatus": "Prototype仮採用",
+      "note": "巣穴100%からゴブリン・ウォーロードとの実戦闘へ進み、勝利時に第1層クエスト完了と第2層解放まで機能します。成長・装備差が戦闘結果へ表れることは確認済みですが、能力値・行動・挑戦条件・報酬・複数フェーズ等の正式なボス戦仕様は未決です。",
+      "links": [
+        {
+          "label": "PR #106",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/106"
+        },
+        {
+          "label": "PR #108",
+          "url": "https://github.com/tenagazaru0527/hundred-layers/pull/108"
+        }
+      ]
+    },
+    {
       "name": "工房（原木→木材）",
       "implementationStatus": "検証中",
       "specificationStatus": "Prototype仮採用",
@@ -274,7 +290,7 @@
     {
       "name": "生産職のゲームループ",
       "implementationStatus": "未実装",
-      "specificationStatus": "有力案",
+      "specificationStatus": "未決",
       "note": "工房を探索原材料から中間素材等へ変換する拠点とする方向は有力案で、原木→木材だけをPrototypeへ縦切り済みです。環境・触媒・成功率判断、生産職Lvや独立した攻略目標を含む生産職全体のゲームループは未実装です。",
       "links": [
         {
