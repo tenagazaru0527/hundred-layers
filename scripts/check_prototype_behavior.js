@@ -1057,6 +1057,211 @@ check("回帰: 敵固有素材データを維持する",
 check("回帰: 戦闘による探索進行設定を残さない", CONFIG.exploration.battleDepth === undefined);
 equal("回帰: 探索処理1単位あたりのスタミナは10のまま", CONFIG.exploration.staminaPerEvent, 10);
 
+/* ---------- 検証用連続探索と探索分布サマリー（Issue #137 / PROTOTYPE ASSUMPTION） ---------- */
+const verifyCfg = CONFIG.verification;
+equal("検証用連続探索: 回数の範囲は1〜100", `${verifyCfg.minUnits}-${verifyCfg.maxUnits}`, "1-100");
+check("検証用連続探索: 既定値が範囲内",
+  verifyCfg.defaultUnits >= verifyCfg.minUnits && verifyCfg.defaultUnits <= verifyCfg.maxUnits,
+  String(verifyCfg.defaultUnits));
+
+// 入力の正規化
+const verifyRun = loadPrototype(file, {});
+equal("回数入力: 新規ランタイムでは既定値", verifyRun.api.verificationUnitsValue(), verifyCfg.defaultUnits);
+equal("回数入力: 下限1を守る（0）", verifyRun.api.normalizeVerificationUnits(0), 1);
+equal("回数入力: 下限1を守る（負数）", verifyRun.api.normalizeVerificationUnits(-5), 1);
+equal("回数入力: 上限100を守る（101）", verifyRun.api.normalizeVerificationUnits(101), 100);
+equal("回数入力: 上限100を守る（大きな値）", verifyRun.api.normalizeVerificationUnits(9999), 100);
+equal("回数入力: 小数は整数へ正規化する", verifyRun.api.normalizeVerificationUnits(12.4), 12);
+equal("回数入力: 小数は四捨五入する", verifyRun.api.normalizeVerificationUnits(12.6), 13);
+equal("回数入力: 範囲内はそのまま", verifyRun.api.normalizeVerificationUnits(37), 37);
+// 空欄・非数値は直前の有効値へ戻す
+verifyRun.api.setVerificationUnits(42);
+equal("回数入力: 空欄は直前の有効値へ戻す", verifyRun.api.normalizeVerificationUnits(""), 42);
+equal("回数入力: nullは直前の有効値へ戻す", verifyRun.api.normalizeVerificationUnits(null), 42);
+equal("回数入力: undefinedは直前の有効値へ戻す", verifyRun.api.normalizeVerificationUnits(undefined), 42);
+equal("回数入力: 非数値は直前の有効値へ戻す", verifyRun.api.normalizeVerificationUnits("abc"), 42);
+equal("回数入力: NaNは直前の有効値へ戻す", verifyRun.api.normalizeVerificationUnits(Number.NaN), 42);
+equal("回数入力: 空欄を確定しても値を壊さない", verifyRun.api.setVerificationUnits(""), 42);
+equal("回数入力: 文字列の数値は受け付ける", verifyRun.api.setVerificationUnits("77"), 77);
+equal("回数入力: 消費スタミナは回数 × 1単位分", verifyRun.api.verificationCost(77), 77 * CONFIG.exploration.staminaPerEvent);
+
+// スライダーと数値入力の双方向同期
+const verifyUi = loadPrototype(file, {});
+verifyUi.api.state.location = "forest";
+verifyUi.api.render();
+const rangeInput = verifyUi.elements.verifyRange;
+const countInput = verifyUi.elements.verifyCount;
+const costLabel = verifyUi.elements.verifyCost;
+check("回数UI: スライダーと数値入力の両方を描画する",
+  /id="verifyRange"/.test(verifyUi.elements.screen.innerHTML) && /id="verifyCount"/.test(verifyUi.elements.screen.innerHTML));
+check("回数UI: min / max / step を指定する",
+  /type="range" min="1" max="100" step="1"/.test(verifyUi.elements.screen.innerHTML)
+  && /type="number" min="1" max="100" step="1"/.test(verifyUi.elements.screen.innerHTML));
+check("回数UI: 検証用操作だと分かる表示にする",
+  /検証用連続探索/.test(verifyUi.elements.screen.innerHTML)
+  && /通常プレイの投入スタミナ選択とは別物/.test(verifyUi.elements.screen.innerHTML));
+rangeInput.value = "30";
+rangeInput.oninput();
+equal("回数UI: スライダー変更が数値入力へ反映される", String(countInput.value), "30");
+equal("回数UI: スライダー変更が保持値へ反映される", verifyUi.api.verificationUnitsValue(), 30);
+equal("回数UI: 消費スタミナ表示も追従する", costLabel.textContent, 30 * CONFIG.exploration.staminaPerEvent);
+countInput.value = "85";
+countInput.onchange();
+equal("回数UI: 数値入力変更がスライダーへ反映される", String(rangeInput.value), "85");
+equal("回数UI: 数値入力変更が保持値へ反映される", verifyUi.api.verificationUnitsValue(), 85);
+countInput.value = "500";
+countInput.onchange();
+equal("回数UI: 上限超過は100へ丸めて両方へ反映する",
+  `${rangeInput.value},${countInput.value},${verifyUi.api.verificationUnitsValue()}`, "100,100,100");
+countInput.value = "";
+countInput.onchange();
+equal("回数UI: 空欄は直前の有効値へ戻す",
+  `${rangeInput.value},${countInput.value},${verifyUi.api.verificationUnitsValue()}`, "100,100,100");
+countInput.value = "0";
+countInput.onchange();
+equal("回数UI: 0は下限1へ丸める", verifyUi.api.verificationUnitsValue(), 1);
+
+// 実行後・再描画後も同一ランタイム中は保持する
+const keepRun = loadPrototype(file, {});
+keepRun.api.state.location = "forest";
+keepRun.api.state.satiety = keepRun.api.maxSatiety();
+keepRun.api.setVerificationUnits(7);
+keepRun.api.render();
+equal("回数保持: render後も指定回数を保つ", keepRun.api.verificationUnitsValue(), 7);
+keepRun.api.exploreVerification(7);
+equal("回数保持: 連続探索の実行後も指定回数を保つ", keepRun.api.verificationUnitsValue(), 7);
+keepRun.api.render();
+equal("回数保持: 実行後の再描画でも指定回数を保つ", keepRun.api.verificationUnitsValue(), 7);
+check("回数保持: 描画されるinputへ保持値が入る",
+  /id="verifyRange" type="range" min="1" max="100" step="1" value="7"/.test(keepRun.elements.screen.innerHTML));
+// 検証用UI設定をセーブデータへ混在させない
+const savedState = JSON.parse(keepRun.store[CONFIG.storageKey] || "{}");
+check("回数保持: 検証回数をlocalStorageへ保存しない",
+  JSON.stringify(savedState).includes("verificationUnits") === false
+  && savedState.verificationUnits === undefined);
+equal("回数保持: reload相当の再初期化では既定値へ戻す",
+  loadPrototype(file, keepRun.store).api.verificationUnitsValue(), verifyCfg.defaultUnits);
+
+// 連続実行は通常と同じ探索処理を繰り返す
+function verificationExploration(units, options = {}) {
+  const instance = loadPrototype(file, {});
+  instance.api.state.location = options.location || "forest";
+  instance.api.state.satiety = options.satiety ?? instance.api.maxSatiety();
+  if (options.hp) instance.api.state.currentHp = options.hp;
+  const result = options.rolls
+    ? withRolls(options.rolls, () => instance.api.exploreVerification(units))
+    : instance.api.exploreVerification(units);
+  return { instance, result };
+}
+const fullRun = verificationExploration(20);
+const fullSummary = fullRun.result.summary;
+equal("連続探索: 指定回数を保持する", fullSummary.plannedEvents, 20);
+equal("連続探索: 中断がなければ実処理回数と一致する", fullSummary.events, 20);
+equal("連続探索: 検証用実行として記録する", fullSummary.verification, true);
+equal("連続探索: 指定回数ぶんのスタミナを消費する",
+  fullSummary.cost, 20 * CONFIG.exploration.staminaPerEvent);
+equal("連続探索: 探索処理単位ごとに結果を残す", fullRun.result.events.length, 20);
+check("連続探索: 各結果へ一次カテゴリが入る",
+  fullRun.result.events.every((event) => Boolean(event.primaryCategory)));
+const logRun = verificationExploration(2, { rolls: [0.7, 0.2, 0.7, 0.2] });
+check("連続探索: 実行をログへ残す",
+  logRun.instance.api.state.systemLog.some((entry) => /検証用連続探索：2回/.test(entry.message)),
+  JSON.stringify(logRun.instance.api.state.systemLog.map((entry) => entry.message)));
+check("連続探索: 中断条件が通常探索と同じであることをログへ記す",
+  logRun.instance.api.state.systemLog.some((entry) => /中断条件は通常探索と同じ/.test(entry.message)));
+
+// 分布サマリーの整合
+const dist = fullSummary.distribution;
+equal("分布: カテゴリ別件数の合計が実処理回数と一致する",
+  Object.values(dist.primary).reduce((total, count) => total + count, 0), fullSummary.events);
+equal("分布: 一次カテゴリを5種すべて持つ", Object.keys(dist.primary).length, 5);
+equal("分布: ドロップランク別件数の合計がアイテムドロップ件数と一致する",
+  Object.values(dist.ranks).reduce((total, count) => total + count, 0), dist.primary.itemDrop);
+equal("分布: 取得アイテムの合計がドロップ件数と一致する",
+  dist.items.reduce((total, entry) => total + entry.amount, 0), dist.primary.itemDrop);
+// 取得アイテム別集計が実際の所持数増分と一致する
+check("分布: 取得アイテム別集計が実際の獲得数と一致する",
+  dist.items.every((entry) => {
+    const fromEvents = fullRun.result.events
+      .filter((event) => event.dropItem === entry.item)
+      .reduce((total, event) => total + event.dropAmount, 0);
+    return fromEvents === entry.amount;
+  }), JSON.stringify(dist.items));
+check("分布: ランク別件数が実際のドロップランクと一致する",
+  CONFIG.exploration.dropRanks.every((rank) =>
+    dist.ranks[rank.id] === fullRun.result.events.filter((event) => event.dropRank === rank.id).length));
+
+// 中断時は実処理回数が指定回数を超えない
+const satietyRun = verificationExploration(100, { satiety: 200 });
+const satietySummary = satietyRun.result.summary;
+equal("中断: 指定回数を保持する", satietySummary.plannedEvents, 100);
+check("中断: 実処理回数が指定回数を超えない", satietySummary.events <= satietySummary.plannedEvents,
+  `${satietySummary.events}/${satietySummary.plannedEvents}`);
+check("中断: 中断が発生する", satietySummary.interrupted === true);
+equal("中断: 満腹度不足を中断理由として記録する", satietySummary.interruptReason, "satiety");
+equal("中断: 中断時もカテゴリ別合計が実処理回数と一致する",
+  Object.values(satietySummary.distribution.primary).reduce((total, count) => total + count, 0),
+  satietySummary.events);
+// HP0による中断（探索失敗→トラップを固定乱数で引く）
+const trapRun = verificationExploration(5, { hp: 10, rolls: [0.37, 0.1] });
+const trapSummary = trapRun.result.summary;
+equal("中断: HP0を中断理由として記録する", trapSummary.interruptReason, "hp");
+check("中断: HP0では残りの探索処理単位を処理しない", trapSummary.events < trapSummary.plannedEvents,
+  `${trapSummary.events}/${trapSummary.plannedEvents}`);
+equal("中断: 中断なしならinterruptReasonはnull", fullSummary.interruptReason, null);
+
+// 表示
+const summaryHtmlText = fullRun.instance.api.verificationSummaryHtml(fullRun.result);
+check("分布UI: 指定回数と実処理回数を表示する",
+  new RegExp(`指定回数 ${fullSummary.plannedEvents} 回 ／ 実処理回数 ${fullSummary.events} 回`).test(summaryHtmlText),
+  summaryHtmlText.slice(0, 300));
+check("分布UI: 中断有無を表示する", /中断：なし/.test(summaryHtmlText));
+check("分布UI: 一次結果カテゴリを5種すべて表示する",
+  ["アイテムドロップ", "モンスター遭遇", "イベント発生", "探索失敗", "探索進行"]
+    .every((label) => summaryHtmlText.includes(label)), summaryHtmlText);
+check("分布UI: ドロップ抽選ランクを3種すべて表示する",
+  ["Rare", "Uncommon", "Common"].every((rank) => summaryHtmlText.includes(rank)));
+check("分布UI: 中断理由を表示する",
+  /中断：あり（満腹度不足）/.test(satietyRun.instance.api.verificationSummaryHtml(satietyRun.result)));
+// 取得0件でも分かる表示にする
+const noDropRun = verificationExploration(3, { rolls: [0.7, 0.2, 0.7, 0.2, 0.7, 0.2] });
+equal("分布UI: 進行のみならアイテムドロップは0件", noDropRun.result.summary.distribution.primary.itemDrop, 0);
+check("分布UI: 取得0件でも分かる表示にする",
+  /取得なし/.test(noDropRun.instance.api.verificationSummaryHtml(noDropRun.result)));
+check("分布UI: 探索結果パネルへ分布サマリーを出す",
+  /検証用連続探索サマリー/.test(fullRun.instance.api.resultHtml(fullRun.result)));
+
+// 通常探索では分布サマリーを出さない（既存表示を維持する）
+const normalRun = loadPrototype(file, {});
+normalRun.api.state.location = "forest";
+normalRun.api.state.satiety = normalRun.api.maxSatiety();
+normalRun.api.explore(30);
+const normalSummary = normalRun.api.state.lastResult.summary;
+equal("回帰: 通常探索は検証用実行として記録しない", normalSummary.verification, false);
+equal("回帰: 通常探索では分布を集計しない", normalSummary.distribution, undefined);
+equal("回帰: 通常探索の結果表示へ分布サマリーを出さない",
+  normalRun.api.verificationSummaryHtml(normalRun.api.state.lastResult), "");
+check("回帰: 通常探索の結果パネルに分布サマリーが出ない",
+  /検証用連続探索サマリー/.test(normalRun.api.resultHtml(normalRun.api.state.lastResult)) === false);
+// 既存summaryの情報を壊していない
+check("回帰: 既存summaryの戦闘 / HP / MP / 満腹度情報を維持する",
+  ["cost", "plannedEvents", "events", "battles", "victories", "defeats", "startHp", "endHp",
+    "startMp", "endMp", "interrupted", "startSatiety", "endSatiety", "maxSatiety",
+    "staminaSatiety", "recoverySatiety", "recoveries", "satietyInterrupted"]
+    .every((key) => normalSummary[key] !== undefined),
+  JSON.stringify(Object.keys(normalSummary)));
+check("回帰: 継戦性サマリーの文言を維持する",
+  /探索サマリー：⚡30/.test(normalRun.api.summaryText(normalSummary)), normalRun.api.summaryText(normalSummary));
+// 通常の投入スタミナUIを維持する
+const normalUi = loadPrototype(file, {});
+normalUi.api.state.location = "forest";
+normalUi.api.render();
+check("回帰: 通常の投入スタミナ選択肢を維持する",
+  CONFIG.explorationCosts.every((cost) => normalUi.elements.screen.innerHTML.includes(`data-cost="${cost}"`)),
+  CONFIG.explorationCosts.join(","));
+check("回帰: 通常の探索開始ボタンを維持する", /id="explore"/.test(normalUi.elements.screen.innerHTML));
+equal("回帰: 探索ログ上限を変更しない", CONFIG.logLimit, 60);
+
 /* ---------- 強敵直接テストと継戦性サマリー（Issue #80） ---------- */
 const dbg = loadPrototype(file, {});
 dbg.api.state.gold = 100;
