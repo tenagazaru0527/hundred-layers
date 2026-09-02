@@ -25,6 +25,8 @@ const EXPORTS = [
   "unlockLocation", "unlockBoss", "defeatBoss", "challengeBoss", "worldQuest",
   "locationDef", "locationUnlocked", "locationProgress", "locationComplete",
   "locationContent", "encounterPool", "enemyDef", "eventText",
+  "chooseWeighted", "explorationCategoryEvents", "rollExplorationDrop", "explorationDropItems",
+  "itemsBodyHtml",
   "debug", "debugBattle", "debugRestore", "summaryText", "writeBattleTurns",
   "maxSatiety", "normalizeSatiety", "consumeSatiety", "planSatietyRecovery",
   "applySatietyRecovery", "supplySatiety", "satietyLogText",

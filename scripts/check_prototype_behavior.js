@@ -761,13 +761,18 @@ for (const id of contentIds) {
   const name = CONFIG.locations.list.find((def) => def.id === id).name;
   check(`ロケーション別: ${name} に通常敵・強敵・探索イベント・報酬がある`,
     Boolean(content?.normalEnemies?.length && content?.eliteEnemies?.length
-      && content?.explorationEvents?.length && content?.rewards?.itemDrops?.length));
+      && content?.explorationEvents?.length && content?.rewards?.itemDrops?.length
+      && content?.primary?.length && content?.drops?.tables));
   check(`ロケーション別: ${name} の通常敵の出現率合計が1`, Math.abs(sum(content.normalEnemies) - 1) < 1e-9,
     String(sum(content.normalEnemies)));
   check(`ロケーション別: ${name} の強敵の出現率合計が1`, Math.abs(sum(content.eliteEnemies) - 1) < 1e-9,
     String(sum(content.eliteEnemies)));
-  check(`ロケーション別: ${name} の探索イベント確率合計が1`, Math.abs(sum(content.explorationEvents) - 1) < 1e-9,
-    String(sum(content.explorationEvents)));
+  check(`ロケーション別: ${name} の一次抽選確率合計が1`, Math.abs(sum(content.primary) - 1) < 1e-9,
+    String(sum(content.primary)));
+  check(`ロケーション別: ${name} の探索イベントはすべて一次カテゴリへ属する`,
+    content.explorationEvents.every((event) =>
+      ["progress", "encounter", "event", "failure"].includes(event.category) && event.weight > 0),
+    content.explorationEvents.map((event) => `${event.id}:${event.category}:${event.weight}`).join(","));
   check(`ロケーション別: ${name} の報酬抽選確率合計が1`, Math.abs(sum(content.rewards.itemDrops) - 1) < 1e-9,
     String(sum(content.rewards.itemDrops)));
   for (const kind of ["normalEnemies", "eliteEnemies"]) {
@@ -799,10 +804,15 @@ check("Utility AI: 森の強敵も既存のUtility AIで行動を選ぶ",
 
 // 探索イベントの差別化
 const eventIds = (id) => CONFIG.locations.content[id].explorationEvents.map((event) => event.id);
-check("ロケーション別: 森にゴブリンの痕跡・人の利用痕跡・自然素材採取がある",
-  ["goblinTrace", "humanTrace", "item"].every((id) => eventIds("forest").includes(id)), eventIds("forest").join(","));
-check("ロケーション別: 巣穴に拠点痕跡・粗雑な罠・盗品イベントがある",
-  ["camp", "trap", "item", "treasure"].every((id) => eventIds("den").includes(id)), eventIds("den").join(","));
+check("ロケーション別: 森にゴブリンの痕跡・人の利用痕跡がある",
+  ["goblinTrace", "humanTrace"].every((id) => eventIds("forest").includes(id)), eventIds("forest").join(","));
+check("ロケーション別: 巣穴に拠点痕跡・粗雑な罠がある",
+  ["camp", "trap"].every((id) => eventIds("den").includes(id)), eventIds("den").join(","));
+// アイテム取得はイベントではなく itemDrop 一次カテゴリの責務になった（Issue #138）
+check("ロケーション別: 旧item / treasureイベントを残さない",
+  ["item", "treasure"].every((id) => !eventIds("forest").includes(id) && !eventIds("den").includes(id)));
+check("ロケーション別: 森と巣穴で探索ドロップの演出文が異なる",
+  CONFIG.locations.content.forest.drops.text !== CONFIG.locations.content.den.drops.text);
 check("ロケーション別: 森と巣穴で同一のイベント文面を使わない",
   CONFIG.locations.content.forest.explorationEvents.every((event) =>
     !CONFIG.locations.content.den.explorationEvents.some((other) => other.text && other.text === event.text)));
@@ -847,6 +857,205 @@ check("ロケーション別: 森の探索で森固有の成果を得られる",
   forestOnly.some((item) => forestItems.includes(item)), forestItems.join(","));
 check("ロケーション別: 巣穴の探索で巣穴固有の素材を得られる",
   denOnly.some((item) => denItems.includes(item)), denItems.join(","));
+
+/* ---------- 探索一次抽選と素材探索ドロップ（Issue #138 / PROTOTYPE ASSUMPTION） ---------- */
+const PRIMARY_IDS = ["itemDrop", "encounter", "event", "failure", "progress"];
+const primaryOf = (id) => CONFIG.locations.content[id].primary;
+const primaryRate = (id, categoryId) =>
+  primaryOf(id).find((entry) => entry.id === categoryId).probability;
+const weightOf = (id, eventId) =>
+  CONFIG.locations.content[id].explorationEvents.find((event) => event.id === eventId).weight;
+const dropTable = (id, rank) => CONFIG.locations.content[id].drops.tables[rank];
+const dropWeight = (id, rank, item) => (dropTable(id, rank).find((e) => e.item === item) || {}).weight;
+
+// 一次抽選テーブル
+equal("一次抽選: 森の確率は 10 / 20 / 5 / 5 / 60",
+  PRIMARY_IDS.map((key) => Math.round(primaryRate("forest", key) * 100)).join("/"), "10/20/5/5/60");
+equal("一次抽選: 巣穴の確率は 5 / 35 / 10 / 10 / 40",
+  PRIMARY_IDS.map((key) => Math.round(primaryRate("den", key) * 100)).join("/"), "5/35/10/10/40");
+for (const id of ["forest", "den"]) {
+  const name = CONFIG.locations.list.find((def) => def.id === id).name;
+  check(`一次抽選: ${name} の5カテゴリが過不足なく定義されている`,
+    primaryOf(id).map((entry) => entry.id).sort().join(",") === [...PRIMARY_IDS].sort().join(","),
+    primaryOf(id).map((entry) => entry.id).join(","));
+}
+
+// 二次抽選の相対weight（現行 explorationEvents の重みを維持する）
+equal("二次抽選: 森の進行イベントは 17:8:4",
+  ["advance", "shortcut", "hidden"].map((id) => weightOf("forest", id)).join(":"), "17:8:4");
+equal("二次抽選: 巣穴の進行イベントは 18:9:5",
+  ["advance", "shortcut", "hidden"].map((id) => weightOf("den", id)).join(":"), "18:9:5");
+equal("二次抽選: 森の通常敵／強敵は 33:4",
+  ["battle", "elite"].map((id) => weightOf("forest", id)).join(":"), "33:4");
+equal("二次抽選: 巣穴の通常敵／強敵は 35:5",
+  ["battle", "elite"].map((id) => weightOf("den", id)).join(":"), "35:5");
+const categoryIds = (id, category) => api.explorationCategoryEvents(id, category).map((e) => e.id).join(",");
+equal("二次抽選: 森のイベント候補", categoryIds("forest", "event"), "humanTrace,goblinTrace,heal");
+equal("二次抽選: 巣穴のイベント候補", categoryIds("den", "event"), "camp,heal");
+equal("二次抽選: 森の失敗候補", categoryIds("forest", "failure"), "trap,lost");
+equal("二次抽選: 巣穴の失敗候補", categoryIds("den", "failure"), "trap,lost");
+check("二次抽選: イベント／失敗候補がロケーションごとに分離される",
+  categoryIds("forest", "event") !== categoryIds("den", "event"));
+check("二次抽選: 対象モンスター抽選は既存テーブルを維持する",
+  api.encounterPool("forest", "normalEnemies").length === CONFIG.locations.content.forest.normalEnemies.length
+  && api.encounterPool("den", "eliteEnemies").length === CONFIG.locations.content.den.eliteEnemies.length);
+// 進行イベントだけが depth を持つ
+check("二次抽選: 進行以外のイベントは探索深度を持たない",
+  ["forest", "den"].every((id) => CONFIG.locations.content[id].explorationEvents
+    .every((event) => (event.category === "progress") === Number.isFinite(event.depth))));
+
+// ドロップ抽選ランク
+equal("探索ドロップ: ランク率は Rare 1 / Uncommon 20 / Common 79",
+  CONFIG.exploration.dropRanks.map((rank) => `${rank.id}${Math.round(rank.probability * 100)}`).join("/"),
+  "Rare1/Uncommon20/Common79");
+check("探索ドロップ: ランク率の合計が1",
+  Math.abs(CONFIG.exploration.dropRanks.reduce((sum, rank) => sum + rank.probability, 0) - 1) < 1e-9);
+// 素材テーブル（Issue #135の元weightを維持する）
+equal("探索ドロップ: 森Rareの候補と重み",
+  dropTable("forest", "Rare").map((e) => `${e.item}:${e.weight}`).join(","),
+  "希少な魔石の欠片:5,クルミの原木:31,イノシシの皮:31,クルミ:31");
+equal("探索ドロップ: 森Uncommonの候補と重み",
+  dropTable("forest", "Uncommon").map((e) => `${e.item}:${e.weight}`).join(","),
+  "上質な魔石の欠片:5,アルンの原木:17.9,綿花:17.9,シカの皮:17.9,ヘーゼルナッツ:17.9,アルンベリー:17.9");
+equal("探索ドロップ: 森Commonの候補と重み",
+  dropTable("forest", "Common").map((e) => `${e.item}:${e.weight}`).join(","),
+  "普通の魔石の欠片:5,ポプラの原木:21.875,大麻:21.875,ウサギの皮:21.875,ラズベリー:21.875");
+equal("探索ドロップ: 巣穴Rareの候補と重み",
+  dropTable("den", "Rare").map((e) => `${e.item}:${e.weight}`).join(","), "希少な魔石の欠片:5,イノシシの皮:91");
+equal("探索ドロップ: 巣穴Uncommonの候補と重み",
+  dropTable("den", "Uncommon").map((e) => `${e.item}:${e.weight}`).join(","), "上質な魔石の欠片:5,シカの皮:84");
+equal("探索ドロップ: 巣穴Commonの候補と重み",
+  dropTable("den", "Common").map((e) => `${e.item}:${e.weight}`).join(","),
+  "普通の魔石の欠片:5,鉄鉱石:10,銅鉱石:36.5,ウサギの皮:36.5");
+// 今回は素材のみ。Issue #135の装備候補は投入しない
+const EQUIPMENT_NAMES = CONFIG.battle.equipment.weapons.concat(CONFIG.battle.equipment.armors).map((e) => e.name);
+check("探索ドロップ: 装備は探索ドロップへ入れない",
+  api.explorationDropItems().every((item) => !EQUIPMENT_NAMES.includes(item)),
+  api.explorationDropItems().filter((item) => EQUIPMENT_NAMES.includes(item)).join(","));
+check("探索ドロップ: 取得素材を所持品一覧へ表示する",
+  ["大麻", "銅鉱石", "希少な魔石の欠片"].every((item) => api.itemsBodyHtml().includes(item)));
+
+// 一次カテゴリを固定して1探索単位を実行するヘルパー
+// 一次確率はロケーションごとに違うため、対象カテゴリの区間中央を狙う乱数を都度求める
+function primaryRoll(locationId, categoryId) {
+  const list = primaryOf(locationId);
+  const index = list.findIndex((entry) => entry.id === categoryId);
+  const before = list.slice(0, index).reduce((total, entry) => total + entry.probability, 0);
+  return before + list[index].probability / 2;
+}
+function exploreOnce(locationId, categoryId, secondaryRolls = [0.5], extraRoll = 0.5) {
+  const instance = loadPrototype(file, {});
+  instance.api.state.location = locationId;
+  instance.api.state.satiety = instance.api.maxSatiety();
+  const queue = [primaryRoll(locationId, categoryId), ...secondaryRolls];
+  withRolls(queue.concat([extraRoll]), () =>
+    instance.api.explore(instance.api.CONFIG.exploration.staminaPerEvent));
+  return instance;
+}
+const firstEvent = (instance) => instance.api.state.lastResult.events[0];
+
+// 1探索単位につき一次カテゴリは必ず1つ
+for (const categoryId of PRIMARY_IDS) {
+  const run = exploreOnce("forest", categoryId);
+  equal(`一次抽選: ${categoryId} を固定乱数で選択できる`, firstEvent(run).primaryCategory, categoryId);
+}
+const progressRun = exploreOnce("forest", "progress", [0.2]);
+const encounterRun = exploreOnce("forest", "encounter", [0.2]);
+const eventRun = exploreOnce("forest", "event", [0.5]);
+const failureRun = exploreOnce("forest", "failure", [0.9]);
+const itemDropRun = exploreOnce("forest", "itemDrop", [0.5]);
+check("一次抽選: 1探索単位のprimaryCategoryは必ず1つ",
+  [progressRun, encounterRun, eventRun, failureRun, itemDropRun].every((run) => {
+    const events = run.api.state.lastResult.events;
+    return events.length === 1 && PRIMARY_IDS.includes(events[0].primaryCategory);
+  }));
+const fiveUnits = loadPrototype(file, {});
+fiveUnits.api.state.location = "forest";
+fiveUnits.api.state.satiety = fiveUnits.api.maxSatiety();
+withRolls(Array.from({ length: 20 }, (_, i) => (i % 2 === 0 ? 0.7 : 0.2)), () => fiveUnits.api.explore(50));
+equal("一次抽選: ⚡50なら中断がなければ探索処理5単位", fiveUnits.api.state.lastResult.events.length, 5);
+equal("一次抽選: 探索処理単位ごとに一次カテゴリを1つ持つ",
+  fiveUnits.api.state.lastResult.events.filter((e) => e.primaryCategory).length, 5);
+
+// 排他性：progressだけが進行量を加算する
+equal("排他性: progressだけが探索深度を進める", firstEvent(progressRun).gain, 4);
+check("排他性: progressで世界踏破率が増える", firstEvent(progressRun).worldGain > 0);
+for (const [label, run] of [["itemDrop", itemDropRun], ["encounter", encounterRun], ["event", eventRun], ["failure", failureRun]]) {
+  const entry = firstEvent(run);
+  equal(`排他性: ${label}では探索深度が増えない`, entry.gain, 0);
+  equal(`排他性: ${label}では世界踏破率が増えない`, entry.worldGain, 0);
+  equal(`排他性: ${label}では探索深度の合計も0`, run.api.state.lastResult.total, 0);
+}
+check("排他性: encounterで戦闘が発生する", Boolean(firstEvent(encounterRun).battle));
+check("排他性: encounterで戦闘勝敗にかかわらず同探索単位の進行を加算しない",
+  firstEvent(encounterRun).gain === 0 && firstEvent(encounterRun).worldGain === 0);
+check("排他性: eventでは探索ドロップが発生しない",
+  !firstEvent(eventRun).dropRank && !firstEvent(eventRun).item);
+check("排他性: failureでは探索ドロップが発生しない",
+  !firstEvent(failureRun).dropRank && !firstEvent(failureRun).item);
+check("排他性: progressでは探索ドロップも戦闘も発生しない",
+  !firstEvent(progressRun).dropRank && !firstEvent(progressRun).battle);
+check("排他性: itemDrop以外ではドロップランクを生成しない",
+  [progressRun, encounterRun, eventRun, failureRun].every((run) => firstEvent(run).dropRank === undefined));
+
+// 探索ドロップの2段階抽選
+// 一次=itemDrop(0.05) → ランク抽選 → ランク内素材抽選
+function dropOnce(locationId, rankRoll, itemRoll) {
+  return firstEvent(exploreOnce(locationId, "itemDrop", [rankRoll, itemRoll]));
+}
+equal("探索ドロップ: 乱数0.005でRareを引く", dropOnce("forest", 0.005, 0.001).dropRank, "Rare");
+equal("探索ドロップ: 乱数0.1でUncommonを引く", dropOnce("forest", 0.1, 0.001).dropRank, "Uncommon");
+equal("探索ドロップ: 乱数0.5でCommonを引く", dropOnce("forest", 0.5, 0.001).dropRank, "Common");
+equal("探索ドロップ: ランク内の先頭素材を引く", dropOnce("forest", 0.005, 0.001).dropItem, "希少な魔石の欠片");
+equal("探索ドロップ: 巣穴のRareテーブルを使う", dropOnce("den", 0.005, 0.9).dropItem, "イノシシの皮");
+const dropRun = exploreOnce("forest", "itemDrop", [0.5, 0.001]);
+const dropEntry = firstEvent(dropRun);
+equal("探索ドロップ: 取得数は1個", dropEntry.dropAmount, 1);
+equal("探索ドロップ: 素材が所持品へ加算される", dropRun.api.state.items[dropEntry.dropItem], 1);
+equal("探索ドロップ: 結果データからランク・アイテム・数量を識別できる",
+  `${dropEntry.primaryCategory},${dropEntry.dropRank},${dropEntry.dropItem},${dropEntry.dropAmount}`,
+  "itemDrop,Common,普通の魔石の欠片,1");
+check("探索ドロップ: 探索ドロップだと分かるログを残す",
+  dropRun.api.state.systemLog.some((entry) => /探索ドロップ：Common ／ 普通の魔石の欠片 ×1/.test(entry.message)),
+  JSON.stringify(dropRun.api.state.systemLog.slice(0, 3)));
+check("探索ドロップ: 戦闘報酬・戦闘素材のログと混同しない",
+  dropRun.api.state.systemLog.every((entry) => !/戦闘報酬|戦闘素材/.test(entry.message)));
+check("探索ドロップ: ロケーション別の演出文を使う",
+  /下草の間に自生する/.test(dropEntry.text), dropEntry.text);
+check("探索ドロップ: 巣穴は巣穴の演出文を使う",
+  /積み上げられたガラクタの山から/.test(dropOnce("den", 0.5, 0.001).text));
+// 結果パネルでも一次カテゴリを読み取れる（Issue #138）
+dropRun.api.render();
+const dropResultHtml = dropRun.api.resultHtml(dropRun.api.state.lastResult);
+check("結果UI: 探索結果の各行へ一次カテゴリを表示する",
+  /アイテムドロップ/.test(dropResultHtml), dropResultHtml.slice(0, 400));
+check("結果UI: 進行しなかった行へ踏破率 +0% を並べない",
+  /踏破率 \+0%/.test(dropResultHtml) === false);
+const progressResultHtml = progressRun.api.resultHtml(progressRun.api.state.lastResult);
+check("結果UI: 探索進行の行には踏破率の増加を表示する",
+  /探索進行/.test(progressResultHtml) && /踏破率 \+4%/.test(progressResultHtml), progressResultHtml.slice(0, 400));
+check("探索ドロップ: 今回の主な成果へ取得素材が出る",
+  api.aggregateGains(dropRun.api.state.lastResult.events).items
+    .some((entry) => entry.item === dropEntry.dropItem && entry.amount === 1));
+
+// 既存の戦闘報酬2経路を維持する
+const victoryRun = exploreOnce("forest", "encounter", [0.2], 0.001);
+const victoryEvent = firstEvent(victoryRun);
+check("回帰: モンスター遭遇の戦闘勝利で既存の戦闘報酬経路が動く",
+  victoryEvent.battle?.result !== "victory" || Boolean(victoryEvent.reward),
+  JSON.stringify({ result: victoryEvent.battle?.result, reward: victoryEvent.reward }));
+check("回帰: 勝利時は敵固有素材も従来どおり取得する",
+  victoryEvent.battle?.result !== "victory" || Boolean(victoryEvent.material));
+check("回帰: 戦闘勝利報酬は探索ドロップとして記録しない",
+  victoryEvent.dropRank === undefined && victoryEvent.dropItem === undefined);
+check("回帰: 戦闘勝利時ロケーション報酬テーブルを維持する",
+  CONFIG.locations.content.forest.rewards.itemDrops.length > 0
+  && CONFIG.locations.content.den.rewards.itemDrops.length > 0);
+check("回帰: 敵固有素材データを維持する",
+  CONFIG.battle.enemies.every((enemy) => Boolean(enemy.material)));
+// battleDepth は排他方式で使わなくなった
+check("回帰: 戦闘による探索進行設定を残さない", CONFIG.exploration.battleDepth === undefined);
+equal("回帰: 探索処理1単位あたりのスタミナは10のまま", CONFIG.exploration.staminaPerEvent, 10);
 
 /* ---------- 強敵直接テストと継戦性サマリー（Issue #80） ---------- */
 const dbg = loadPrototype(file, {});
@@ -1030,15 +1239,14 @@ function controlledSatietyExploration(plannedEvents, battleEvent, satiety, battl
   const instance = loadPrototype(file, {});
   instance.api.state.location = "forest";
   instance.api.state.satiety = satiety;
-  const events = instance.api.locationContent("forest").explorationEvents;
-  function eventRoll(id) {
-    const index = events.findIndex((event) => event.id === id);
-    if (index < 0) throw new Error(`テスト用イベントが見つからない: ${id}`);
-    return events.slice(0, index).reduce((total, event) => total + event.probability, 0)
-      + events[index].probability / 2;
+  // Issue #138以降、探索1単位は「一次抽選 → 二次抽選」の2回抽選になる
+  // 探索進行→通常進行(advance)、モンスター遭遇→通常敵(battle) を決定的に選ぶ乱数を並べる
+  const PROGRESS_ROLLS = [0.7, 0.2];
+  const ENCOUNTER_ROLLS = [0.2, 0.2];
+  const rolls = [];
+  for (let index = 1; index <= Math.min(battleEvent, plannedEvents); index += 1) {
+    rolls.push(...(index === battleEvent ? ENCOUNTER_ROLLS : PROGRESS_ROLLS));
   }
-  const rolls = Array.from({ length: Math.min(battleEvent, plannedEvents) }, (_, index) =>
-    eventRoll(index + 1 === battleEvent ? "battle" : "advance"));
   const originalRandom = Math.random;
   try {
     Math.random = () => rolls.length ? rolls.shift() : battleRoll;
