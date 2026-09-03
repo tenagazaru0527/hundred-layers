@@ -2556,6 +2556,121 @@ check("回帰: 酒場は未実装のまま残す",
   CONFIG.locations.content !== undefined
   && /酒場/.test(workshopHtml) && /（未実装）/.test(workshopHtml));
 
+/* ---------- NPC売却（Issue #147 / PROTOTYPE ASSUMPTION） ---------- */
+// sellTierはPrototype上の売却ランクであり、正式なレアリティ／素材品質ではない。
+const sellPrices = CONFIG.materials.sellTierPrices;
+equal("売却: Commonは10Gで解決される", api.sellTierPrice("Common"), 10);
+equal("売却: Uncommonは25Gで解決される", api.sellTierPrice("Uncommon"), 25);
+equal("売却: Rareは100Gで解決される", api.sellTierPrice("Rare"), 100);
+check("売却: 価格はsellTierだけから決まる",
+  api.sellableItems().every((entry) => api.materialPrice(entry.item) === sellPrices[entry.sellTier]));
+check("売却: アイテム個別価格を持たない",
+  CONFIG.materials.list.every((entry) => entry.gold === undefined));
+check("売却: 既存の4G / 5G個別価格に依存しない",
+  api.materialPrice("ゴブリンの牙") !== 4 && api.materialPrice("コウモリの翼膜") !== 5
+  && [4, 5].every((gold) => !Object.values(sellPrices).includes(gold)));
+check("売却: 売却可否と売却ランクを分離して持つ",
+  CONFIG.materials.list.every((entry) => typeof entry.sellable === "boolean")
+  && api.sellableItems().every((entry) => ["Common", "Uncommon", "Rare"].includes(entry.sellTier)));
+check("売却: アイテム種別による価格補正を持たない",
+  CONFIG.materials.list.every((entry) => entry.priceModifier === undefined && entry.category === undefined));
+
+// 売却可否
+const unsellable = CONFIG.materials.list.find((entry) => entry.sellable === false);
+check("売却: sellable=falseのアイテムを定義できる", Boolean(unsellable), JSON.stringify(unsellable));
+equal("売却: sellable=falseのアイテムは0G", api.materialPrice(unsellable.item), 0);
+check("売却: sellable=falseのアイテムを売却UIへ出さない",
+  api.sellableItems().every((entry) => entry.item !== unsellable.item));
+check("売却: 未登録アイテムは売却できない", api.sellable("存在しないアイテム") === false);
+
+function sellInstance(items = {}) {
+  const instance = loadPrototype(file, {});
+  instance.api.state.location = "town";
+  for (const [name, amount] of Object.entries(items)) instance.api.state.items[name] = amount;
+  return instance;
+}
+
+// 売却1回の効果
+const sellRun = sellInstance({ "ゴブリンの牙": 2 });
+const sellGoldBefore = sellRun.api.state.gold;
+sellRun.api.sell("ゴブリンの牙");
+equal("売却: 売却1回で所持数が1減る", sellRun.api.state.items["ゴブリンの牙"], 1);
+equal("売却: 売却額分だけGoldが増える",
+  sellRun.api.state.gold - sellGoldBefore, api.materialPrice("ゴブリンの牙"));
+
+// tierごとの増加額
+for (const [tier, price] of Object.entries(sellPrices)) {
+  const sample = api.sellableItems().find((entry) => entry.sellTier === tier);
+  check(`売却: ${tier}の売却対象が存在する`, Boolean(sample), tier);
+  const tierRun = sellInstance({ [sample.item]: 1 });
+  const before = tierRun.api.state.gold;
+  tierRun.api.sell(sample.item);
+  equal(`売却: ${tier}（${sample.item}）で${price}G増える`, tierRun.api.state.gold - before, price);
+  equal(`売却: ${tier}（${sample.item}）で所持数が0になる`, tierRun.api.state.items[sample.item], 0);
+}
+
+// 売却できない条件
+const zeroRun = sellInstance({ "ゴブリンの牙": 0 });
+const zeroGold = zeroRun.api.state.gold;
+zeroRun.api.sell("ゴブリンの牙");
+equal("売却: 所持0個では売却できない", zeroRun.api.state.gold, zeroGold);
+equal("売却: 所持0個で所持数がマイナスにならない", zeroRun.api.state.items["ゴブリンの牙"], 0);
+
+const denyRun = sellInstance({ [unsellable.item]: 3 });
+const denyGold = denyRun.api.state.gold;
+denyRun.api.sell(unsellable.item);
+equal("売却: sellable=falseのアイテムを売却できない", denyRun.api.state.items[unsellable.item], 3);
+equal("売却: sellable=falseの売却でGoldが増えない", denyRun.api.state.gold, denyGold);
+
+// 探索取得素材 → Gold
+const explorationSellable = [...new Set(api.explorationDropItems())].filter((name) => api.sellable(name));
+check("売却: 探索ドロップ素材に売却可能なものがある",
+  explorationSellable.length > 0, explorationSellable.join(","));
+const dropSellRun = sellInstance({ [explorationSellable[0]]: 1 });
+const dropSellGold = dropSellRun.api.state.gold;
+dropSellRun.api.sell(explorationSellable[0]);
+equal("売却: 探索取得素材を売却できる", dropSellRun.api.state.items[explorationSellable[0]], 0);
+check("売却: 探索取得素材の売却でGoldが増える",
+  dropSellRun.api.state.gold > dropSellGold,
+  `${explorationSellable[0]}: ${dropSellGold} -> ${dropSellRun.api.state.gold}`);
+
+// 工房生成物の境界（Issue #141 / PR #142 の判断を維持する）
+check("売却: 工房生成木材を売却対象にしない",
+  ["普通の木材", "上質な木材", "希少な木材"].every((name) => api.sellable(name) === false));
+const woodRun = sellInstance({ "普通の木材": 1 });
+const woodGold = woodRun.api.state.gold;
+woodRun.api.sell("普通の木材");
+equal("売却: 木材を売却しても所持数が減らない", woodRun.api.state.items["普通の木材"], 1);
+equal("売却: 木材を売却してもGoldが増えない", woodRun.api.state.gold, woodGold);
+
+// 売却UI
+const uiRun = sellInstance({ "ゴブリンの牙": 1 });
+const sellHtml = uiRun.api.materialsHtml();
+check("売却UI: アイテム名・所持数・売却額・売却操作を示す",
+  /ゴブリンの牙/.test(sellHtml) && /×1/.test(sellHtml)
+  && new RegExp(`${api.materialPrice("ゴブリンの牙")} Gold/個`).test(sellHtml)
+  && /data-sell="ゴブリンの牙"/.test(sellHtml));
+check("売却UI: 売却不可アイテムを一覧へ出さない", !new RegExp(unsellable.item).test(sellHtml));
+check("売却UI: 木材を一覧へ出さない", !/木材/.test(sellHtml));
+check("売却UI: sellTierが正式レアリティでないことを明記する",
+  /正式なアイテムレアリティ／素材品質ではありません/.test(uiRun.api.storeBodyHtml()));
+
+// 保存／再読込
+const persistRun = sellInstance({ "ゴブリンの牙": 2 });
+persistRun.api.sell("ゴブリンの牙");
+const persistGold = persistRun.api.state.gold;
+const reloadedSell = loadPrototype(file, persistRun.store).api;
+equal("売却: 再読込後もGoldが維持される", reloadedSell.state.gold, persistGold);
+equal("売却: 再読込後も所持数が維持される", reloadedSell.state.items["ゴブリンの牙"], 1);
+
+// 街の外では売却できない
+const fieldRun = sellInstance({ "ゴブリンの牙": 1 });
+fieldRun.api.state.location = "forest";
+const fieldGold = fieldRun.api.state.gold;
+fieldRun.api.sell("ゴブリンの牙");
+equal("売却: 街の外では売却できない", fieldRun.api.state.items["ゴブリンの牙"], 1);
+equal("売却: 街の外の売却でGoldが増えない", fieldRun.api.state.gold, fieldGold);
+
 /* ---------- 第1層ボス戦（Issue #105 / PROTOTYPE ASSUMPTION） ---------- */
 const bossEnemy = CONFIG.battle.bosses.find((entry) => entry.id === "goblinWarlord");
 check("ボス: ゴブリン・ウォーロードの敵定義がある", Boolean(bossEnemy));
