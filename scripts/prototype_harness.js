@@ -44,6 +44,7 @@ const EXPORTS = [
   "normalAttackAttributes", "weaponNormalAttackAttributes", "resolvePlayerAction",
   "normalAttackAttributesText", "equipmentHtml",
   "buy", "equip", "sell",
+  "sellEntry", "sellable", "sellTierPrice", "materialPrice", "sellableItems", "materialsHtml", "storeBodyHtml",
   "bossDef", "lastBossHtml",
   "moveLayer", "layerDef", "layerUnlocked", "layerEntry", "layerLocations", "normalizeLayer", "layerNavHtml",
 ];
