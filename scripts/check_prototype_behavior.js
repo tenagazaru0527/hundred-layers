@@ -2349,8 +2349,13 @@ const recipeIds = workshop.recipes.map((recipe) => recipe.id);
 const workshopItemName = (id) => workshop.items.find((entry) => entry.id === id).name;
 
 // レシピ定義
-equal("工房: 今回のレシピは原木→木材の3本", recipeIds.join(","), "normalWood,fineWood,rareWood");
-for (const recipe of workshop.recipes) {
+// Issue #141の原木→木材3本と、Issue #149で追加した完成品1本を分けて確認する
+const woodRecipeIds = ["normalWood", "fineWood", "rareWood"];
+const woodRecipes = workshop.recipes.filter((recipe) => woodRecipeIds.includes(recipe.id));
+equal("工房: 原木→木材のレシピは3本", woodRecipes.map((recipe) => recipe.id).join(","), woodRecipeIds.join(","));
+check("工房: 原木→木材以外のレシピはIssue #149の完成品1本のみ",
+  recipeIds.filter((id) => !woodRecipeIds.includes(id)).join(",") === "woodenCharm", recipeIds.join(","));
+for (const recipe of woodRecipes) {
   check(`工房: ${recipe.name}のレシピが条件指定材料を使う`,
     recipe.ingredients.every((ingredient) => ingredient.type === "condition" && ingredient.tag && ingredient.rank),
     JSON.stringify(recipe.ingredients));
@@ -2358,8 +2363,8 @@ for (const recipe of workshop.recipes) {
   equal(`工房: ${recipe.name}の投入倍率は1固定`, api.recipeInputMultiplier(recipe), 1);
   equal(`工房: ${recipe.name}の生成は1個`, recipe.outputs.map((o) => o.quantity).join(","), "1");
 }
-check("工房: 材料枠へ個別アイテムIDを直書きしない",
-  workshop.recipes.every((recipe) => recipe.ingredients.every((ingredient) => ingredient.itemId === undefined)));
+check("工房: 原木→木材の材料枠へ個別アイテムIDを直書きしない",
+  woodRecipes.every((recipe) => recipe.ingredients.every((ingredient) => ingredient.itemId === undefined)));
 // 素材メタデータ（最小限）
 check("工房: 原木3種がlogタグとランク相当値を持つ",
   ["poplarLog", "arunLog", "walnutLog"].every((id) => {
@@ -2670,6 +2675,193 @@ const fieldGold = fieldRun.api.state.gold;
 fieldRun.api.sell("ゴブリンの牙");
 equal("売却: 街の外では売却できない", fieldRun.api.state.items["ゴブリンの牙"], 1);
 equal("売却: 街の外の売却でGoldが増えない", fieldRun.api.state.gold, fieldGold);
+
+/* ---------- 木材から木製装飾品（Issue #149 / PROTOTYPE ASSUMPTION） ---------- */
+// 探索 → 原木 → 普通の木材 → 木彫りのお守り → 装飾品スロット → 実効VITの縦切りを確認する。
+// 木彫りのお守りは完成品装備であり、所持品スタックではなく ownedEquipment で持つ。
+const charmRecipe = api.recipeDef("woodenCharm");
+const charmDef = api.findEquipment("accessories", "woodenCharm");
+check("装飾品: 木彫りのお守りのレシピがある", Boolean(charmRecipe));
+check("装飾品: 装飾品スロットの装備定義がある", Boolean(charmDef));
+equal("装飾品: 追加した装飾品は1種類だけ", api.equipmentList("accessories").length, 1);
+equal("装飾品: 効果はVIT+1（Prototype仮値）",
+  JSON.stringify(api.equipmentModifiers(charmDef)), JSON.stringify({ VIT: 1 }));
+equal("装飾品: 材料は普通の木材1と普通の魔石の欠片1",
+  JSON.stringify(charmRecipe.ingredients.map((i) => [i.type, i.itemId, i.quantity])),
+  JSON.stringify([["item", "normalWood", 1], ["item", "commonMagicStone", 1]]));
+equal("装飾品: 投入倍率は1固定", api.recipeInputMultiplier(charmRecipe), 1);
+equal("装飾品: 基礎成功率は100%", charmRecipe.baseSuccessRate, 1);
+equal("装飾品: 生成は完成品装備1個", charmRecipe.outputs.length, 1);
+equal("装飾品: 出力から装備定義を解決できる",
+  api.outputEquipment(charmRecipe.outputs[0])?.id, "woodenCharm");
+// 強化値は武器・防具のみ。装飾品IDが保存値に紛れ込んでも取り込まない
+const charmEnhanceRun = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({ enhancements: { woodenCharm: 5, ironDagger: 2 } }),
+}).api;
+equal("装飾品: 装飾品の強化値を保持しない", charmEnhanceRun.enhanceLevel("woodenCharm"), 0);
+equal("装飾品: 武器の強化値は従来どおり保持する", charmEnhanceRun.enhanceLevel("ironDagger"), 2);
+
+function charmInstance(items = {}) {
+  const instance = loadPrototype(file, {});
+  instance.api.state.location = "town";
+  for (const [name, amount] of Object.entries(items)) instance.api.state.items[name] = amount;
+  return instance;
+}
+const CHARM_MATERIALS = { "普通の木材": 1, "普通の魔石の欠片": 1 };
+
+// 作成
+const charmRun = charmInstance(CHARM_MATERIALS);
+const charmResult = charmRun.api.craft("woodenCharm", 1);
+check("装飾品: 普通の木材1＋普通の魔石の欠片1で作成できる", Boolean(charmResult), JSON.stringify(charmResult));
+equal("装飾品: 成功時に普通の木材が1減る", charmRun.api.state.items["普通の木材"], 0);
+equal("装飾品: 成功時に普通の魔石の欠片が1減る", charmRun.api.state.items["普通の魔石の欠片"], 0);
+check("装飾品: 成功時に木彫りのお守りを所有する",
+  charmRun.api.state.ownedEquipment.includes("woodenCharm"));
+check("装飾品: 完成品は所持品スタックへ入れない",
+  (charmRun.api.state.items["木彫りのお守り"] || 0) === 0);
+
+// 材料不足
+for (const [missing, held] of [["普通の木材", { "普通の魔石の欠片": 1 }], ["普通の魔石の欠片", { "普通の木材": 1 }]]) {
+  const shortRun = charmInstance(held);
+  const shortResult = shortRun.api.craft("woodenCharm", 1);
+  equal(`装飾品: ${missing}が不足すると作成できない`, shortResult, null);
+  check(`装飾品: ${missing}不足で材料を部分消費しない`,
+    Object.entries(held).every(([name, amount]) => shortRun.api.state.items[name] === amount),
+    JSON.stringify(shortRun.api.state.items));
+  check(`装飾品: ${missing}不足では所有しない`,
+    shortRun.api.state.ownedEquipment.includes("woodenCharm") === false);
+}
+
+// 所有済みなら再作成不可（同一装備の複数個体管理は未決のためのPrototype境界）
+const againRun = charmInstance({ "普通の木材": 2, "普通の魔石の欠片": 2 });
+againRun.api.craft("woodenCharm", 1);
+check("装飾品: 所有済みなら作成可能回数が0", againRun.api.maxCraftCount("woodenCharm") === 0);
+check("装飾品: 所有済みなら再作成を拒否する", againRun.api.recipeOwnedLimitReached(charmRecipe));
+const againResult = againRun.api.craft("woodenCharm", 1);
+equal("装飾品: 所有済みでは再作成できない", againResult, null);
+equal("装飾品: 再作成拒否時に材料を消費しない", againRun.api.state.items["普通の木材"], 1);
+equal("装飾品: 所有数は1個のまま",
+  againRun.api.state.ownedEquipment.filter((id) => id === "woodenCharm").length, 1);
+
+// 装備／解除と実効ステータス
+const slotRun = charmInstance(CHARM_MATERIALS);
+const baseVit = slotRun.api.baseStat("VIT");
+equal("装飾品: 初期状態の装飾品スロットは未装備", slotRun.api.equippedAccessory(), null);
+equal("装飾品: 未装備ならVIT補正は0", slotRun.api.effectiveStats().VIT, baseVit);
+slotRun.api.equip("accessories", "woodenCharm");
+check("装飾品: 未所持では装備できない", slotRun.api.equippedAccessory() === null);
+slotRun.api.craft("woodenCharm", 1);
+slotRun.api.equip("accessories", "woodenCharm");
+equal("装飾品: 所有済みのお守りを装備できる", slotRun.api.equippedAccessory()?.id, "woodenCharm");
+equal("装飾品: 装備時にVIT+1が実効値へ加算される", slotRun.api.effectiveStats().VIT, baseVit + 1);
+equal("装飾品: 装備しても基礎VITは変化しない", slotRun.api.baseStat("VIT"), baseVit);
+equal("装飾品: 装備補正の集計にVIT+1が入る", slotRun.api.equippedParameterModifiers().VIT, 1);
+slotRun.api.unequip("accessories");
+equal("装飾品: 解除できる", slotRun.api.equippedAccessory(), null);
+equal("装飾品: 解除するとVIT補正が消える", slotRun.api.effectiveStats().VIT, baseVit);
+for (let i = 0; i < 3; i += 1) {
+  slotRun.api.equip("accessories", "woodenCharm");
+  equal(`装飾品: ${i + 1}回目の装備でも二重加算されない`, slotRun.api.effectiveStats().VIT, baseVit + 1);
+  slotRun.api.unequip("accessories");
+  equal(`装飾品: ${i + 1}回目の解除でも基礎値へ戻る`, slotRun.api.effectiveStats().VIT, baseVit);
+}
+slotRun.api.equip("accessories", "woodenCharm");
+slotRun.api.equip("accessories", "woodenCharm");
+equal("装飾品: 同じ装飾品を続けて装備しても二重加算されない",
+  slotRun.api.effectiveStats().VIT, baseVit + 1);
+check("装飾品: 武器・防具の補正集計に回帰がない",
+  slotRun.api.equippedParameterModifiers().DEX === undefined,
+  JSON.stringify(slotRun.api.equippedParameterModifiers()));
+check("装飾品: 装飾品は購入できない", (() => {
+  const buyRun = charmInstance();
+  buyRun.api.state.gold = 9999;
+  buyRun.api.buy("accessories", "woodenCharm");
+  return buyRun.api.state.ownedEquipment.includes("woodenCharm") === false && buyRun.api.state.gold === 9999;
+})());
+
+// Ability条件へ装飾品補正が混入しない
+const abilityCharm = charmInstance(CHARM_MATERIALS);
+abilityCharm.api.craft("woodenCharm", 1);
+abilityCharm.api.equip("accessories", "woodenCharm");
+abilityCharm.api.state.skillPoints = 1;
+abilityCharm.api.state.stats.DEX = 7;
+check("装飾品: 装飾品を装備してもAbility条件は基礎ステータスで判定する",
+  abilityCharm.api.meetsAbilityStats("slashTraining") === false
+  && abilityCharm.api.canRaiseAbility("slashTraining") === false);
+abilityCharm.api.state.stats.DEX = 8;
+check("装飾品: 基礎条件を満たせば装飾品装備中でもAbility Lvを上げられる",
+  abilityCharm.api.canRaiseAbility("slashTraining"));
+
+// 保存／再読込
+const persistCharm = charmInstance(CHARM_MATERIALS);
+persistCharm.api.craft("woodenCharm", 1);
+persistCharm.api.equip("accessories", "woodenCharm");
+const reloadedCharm = loadPrototype(file, persistCharm.store).api;
+check("装飾品: 再読込後も所有状態を保持する",
+  reloadedCharm.state.ownedEquipment.includes("woodenCharm"));
+equal("装飾品: 再読込後も装備状態を保持する", reloadedCharm.equippedAccessory()?.id, "woodenCharm");
+equal("装飾品: 再読込後も実効VITへ加算される",
+  reloadedCharm.effectiveStats().VIT, reloadedCharm.baseStat("VIT") + 1);
+const unequippedCharm = charmInstance(CHARM_MATERIALS);
+unequippedCharm.api.craft("woodenCharm", 1);
+const reloadedUnequipped = loadPrototype(file, unequippedCharm.store).api;
+check("装飾品: 未装備で再読込しても所有は残る",
+  reloadedUnequipped.state.ownedEquipment.includes("woodenCharm"));
+equal("装飾品: 未装備状態も再読込後に保持する", reloadedUnequipped.equippedAccessory(), null);
+
+// 旧セーブ互換
+const legacyCharm = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({
+    gold: 50, ownedEquipment: ["trainingDagger", "travelerClothes"],
+    equippedWeapon: "trainingDagger", equippedArmor: "travelerClothes",
+  }),
+}).api;
+equal("装飾品: 旧セーブに装飾品状態がなくても未装備として扱う", legacyCharm.equippedAccessory(), null);
+equal("装飾品: 旧セーブでもGoldなど既存項目を保持する", legacyCharm.state.gold, 50);
+equal("装飾品: 旧セーブでも実効VITは基礎値のまま",
+  legacyCharm.effectiveStats().VIT, legacyCharm.baseStat("VIT"));
+const brokenCharm = loadPrototype(file, {
+  [CONFIG.storageKey]: JSON.stringify({ equippedAccessory: "woodenCharm", ownedEquipment: [] }),
+}).api;
+equal("装飾品: 未所持のまま装備IDだけが残っていても未装備へ落とす",
+  brokenCharm.equippedAccessory(), null);
+
+// NPC売却との境界（Issue #147 / PR #148）
+check("装飾品: 木彫りのお守りをNPC売却対象にしない", api.sellable("木彫りのお守り") === false);
+check("装飾品: 普通の木材は売却不可のまま維持する", api.sellable("普通の木材") === false);
+check("装飾品: 売却一覧へ木彫りのお守りを出さない",
+  api.sellableItems().every((entry) => entry.item !== "木彫りのお守り"));
+
+// 原木→木材加工への回帰がない
+const regressCharm = charmInstance({ "ポプラの原木": 1 });
+const regressCraft = regressCharm.api.craft("normalWood", 1);
+check("装飾品: 原木→木材の加工に回帰がない",
+  Boolean(regressCraft) && regressCharm.api.state.items["普通の木材"] === 1
+  && regressCharm.api.state.items["ポプラの原木"] === 0,
+  JSON.stringify(regressCraft));
+check("装飾品: 木材レシピは条件指定材料のまま",
+  api.recipeDef("normalWood").ingredients.every((ingredient) => ingredient.type === "condition"));
+
+// UI
+const charmUi = charmInstance(CHARM_MATERIALS);
+const charmWorkshopHtml = charmUi.api.workshopBodyHtml();
+check("装飾品UI: 工房に木彫りのお守りと必要素材・所持数を表示する",
+  /木彫りのお守り/.test(charmWorkshopHtml) && /普通の木材 ×1/.test(charmWorkshopHtml)
+  && /普通の魔石の欠片 ×1/.test(charmWorkshopHtml));
+check("装飾品UI: 工房に効果（VIT +1）を表示する", /VIT） \+1/.test(charmWorkshopHtml));
+check("装飾品UI: 工房に作成操作がある", /data-craft="woodenCharm"/.test(charmWorkshopHtml));
+charmUi.api.craft("woodenCharm", 1);
+check("装飾品UI: 所有済みなら再作成できないことを示す",
+  /すでに所有しているため作成できません/.test(charmUi.api.workshopBodyHtml()));
+const charmSlotHtml = charmUi.api.accessoryHtml();
+check("装飾品UI: 装飾品枠と名称・効果・装備操作を表示する",
+  /装飾品/.test(charmSlotHtml) && /木彫りのお守り/.test(charmSlotHtml)
+  && /VIT） \+1/.test(charmSlotHtml) && /data-equip="accessories:woodenCharm"/.test(charmSlotHtml));
+check("装飾品UI: 解除操作を表示する", /data-unequip="accessories"/.test(charmSlotHtml));
+charmUi.api.equip("accessories", "woodenCharm");
+check("装飾品UI: 装備中が分かる", /（装備中）/.test(charmUi.api.accessoryHtml()));
+check("装飾品UI: ステータスへ装備補正として表示する",
+  /\(\+1\)/.test(charmUi.api.statusBodyHtml()));
 
 /* ---------- 第1層ボス戦（Issue #105 / PROTOTYPE ASSUMPTION） ---------- */
 const bossEnemy = CONFIG.battle.bosses.find((entry) => entry.id === "goblinWarlord");
