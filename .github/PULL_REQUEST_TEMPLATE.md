@@ -16,6 +16,10 @@ Closes #
 - [ ] 同PRで更新済み
 - [ ] 別Issue・後続対応が必要
 
+設計文書を変更した場合のみ：
+
+- [ ] `docs/DOC_MAP.md` の該当テーマから参照先を特定できることを確認した（不足していれば既存行を拡張、または新しい独立テーマとして行を追加した）
+
 ## Human Verification
 
 - [ ] Human Verification不要
