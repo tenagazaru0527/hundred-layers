@@ -34,6 +34,15 @@
 - Human Verificationが残る場合、自動検証とPR作成後に `REVIEW_REQUIRED` として停止し、未確認項目を人間へ引き渡す。
 - Agent自身はmergeしない。
 
+### Pull Requestの影響範囲と検証状態
+
+- PR作成時は、テンプレートの影響範囲と検証状態を省略せず、各項目を記入する。
+- ゲーム仕様に関係する変更では、`docs/DOC_MAP.md`から関連テーマと確認対象のSSOTを特定する。ゲーム仕様と無関係な変更では `N/A` とする。
+- 差分から古くなる可能性がある文書を列挙し、関連する`OPEN_QUESTIONS.md`またはDecisionの再検討条件がある場合は記載する。該当しない場合は `N/A` とする。
+- Automated Test、Simulation、Adversarial Playtest、Human Verification、Docs Syncは、それぞれ `DONE / PENDING / N/A` のいずれかで明示し、必要に応じてコマンド、結果、未完了理由、確認項目を補足する。
+- Issueの受入条件と変更領域に不要な検証は実行せず `N/A` とする。
+- Agent自身はHuman Verificationを `DONE` にしない。人間による確認前は `PENDING`、Human Verificationが不要な場合は `N/A` とする。
+
 ## 検証ルーティング
 
 - Prototype変更時の通常full regression入口は `python3 scripts/check_prototype.py` とする。
