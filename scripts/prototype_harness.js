@@ -31,6 +31,8 @@ const EXPORTS = [
   "normalizeVerificationUnits", "verificationUnitsValue", "setVerificationUnits", "verificationCost",
   "exploreVerification", "explorationDistribution", "verificationHtml", "verificationSummaryHtml",
   "verificationRunnable", "verificationWarningText",
+  "explorationMode", "currentExplorationMode", "setExplorationMode", "explorationModeDef",
+  "explorationModeAvailable", "availableExplorationModes", "explorationPrimary", "focusedModeName",
   "dungeon", "interruptReasonText",
   "maxSatiety", "normalizeSatiety", "consumeSatiety", "planSatietyRecovery",
   "applySatietyRecovery", "supplySatiety", "satietyLogText",
