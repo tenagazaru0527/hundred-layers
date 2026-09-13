@@ -8,24 +8,24 @@ Closes #
 
 ## 対象外
 
-## テスト結果
+## 影響範囲
 
-## 設計書への影響
+ゲーム仕様と無関係な項目は `N/A` としてください。
 
-- [ ] 影響なし
-- [ ] 同PRで更新済み
-- [ ] 別Issue・後続対応が必要
+- DOC_MAP theme: N/A
+- SSOT checked: N/A
+- Potentially stale docs: N/A
+- Related OPEN_QUESTIONS: N/A
+- Decision reconsideration: N/A
 
-設計文書を変更した場合のみ：
+## 検証状態
 
-- [ ] `docs/DOC_MAP.md` の該当テーマから参照先を特定できることを確認した（不足していれば既存行を拡張、または新しい独立テーマとして行を追加した）
+各項目を `DONE / PENDING / N/A` のいずれかとし、必要に応じてコマンド、結果、未完了理由、確認項目を同じ行または直下へ補足してください。
 
-## Human Verification
-
-- [ ] Human Verification不要
-- [ ] Human Verificationが必要（未実施）
-- [ ] Human Verification完了
-
-必要な場合は、具体的な確認項目を記載してください。
+- Automated Test: N/A
+- Simulation: N/A
+- Adversarial Playtest: N/A
+- Human Verification: N/A
+- Docs Sync: N/A
 
 ## 補足・残存リスク
