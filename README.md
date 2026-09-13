@@ -123,6 +123,9 @@ Prototypeでは、
 - [`docs/DECISIONS.md`](docs/DECISIONS.md)
   主要な設計判断の理由、比較した方向、再検討条件を示す索引
 
+- [`docs/DEVELOPMENT_PROCESS.md`](docs/DEVELOPMENT_PROCESS.md)
+  AI活用、検証、Human Verification、開発プロセス改善の基本方針
+
 - [`status.html`](status.html)
   現在地と直近予定を共有する手動更新スナップショット
 
