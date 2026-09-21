@@ -1057,6 +1057,141 @@ check("回帰: 敵固有素材データを維持する",
 check("回帰: 戦闘による探索進行設定を残さない", CONFIG.exploration.battleDepth === undefined);
 equal("回帰: 探索処理1単位あたりのスタミナは10のまま", CONFIG.exploration.staminaPerEvent, 10);
 
+/* ---------- 100%後の採取ねらいうち探索（Issue #160 / PROTOTYPE ASSUMPTION） ---------- */
+const modesCfg = CONFIG.exploration.modes;
+const gatherModeDef = modesCfg.list.find((mode) => mode.id === "gather");
+equal("探索モード: 既定は通常探索", modesCfg.default, "normal");
+equal("探索モード: 通常探索と採取ねらいうち探索の2種類だけ", modesCfg.list.map((mode) => mode.id).join(","), "normal,gather");
+equal("採取ねらいうち: 仮値はイベント発生の50%をアイテムドロップへ移す",
+  `${gatherModeDef.shift.from}->${gatherModeDef.shift.to}:${gatherModeDef.shift.ratio}`, "event->itemDrop:0.5");
+check("採取ねらいうち: 踏破率100%を解放条件にする", gatherModeDef.requiresComplete === true);
+
+// 一次抽選テーブルの変換（ロケーションごと）
+const rateMap = (list) => Object.fromEntries(list.map((entry) => [entry.id, entry.probability]));
+const rateSum = (list) => list.reduce((sum, entry) => sum + entry.probability, 0);
+const sameRate = (a, b) => Math.abs(a - b) < 1e-9;
+for (const id of ["forest", "den"]) {
+  const name = CONFIG.locations.list.find((def) => def.id === id).name;
+  const base = rateMap(primaryOf(id));
+  const normalTable = api.explorationPrimary(id, "normal");
+  const gatherTable = api.explorationPrimary(id, "gather");
+  const normal = rateMap(normalTable);
+  const gather = rateMap(gatherTable);
+  check(`通常探索: ${name} の一次抽選は既存確率のまま`,
+    PRIMARY_IDS.every((key) => normal[key] === base[key]), JSON.stringify(normal));
+  check(`採取ねらいうち: ${name} のイベント発生は通常の50%`,
+    sameRate(gather.event, base.event * 0.5), JSON.stringify(gather));
+  check(`採取ねらいうち: ${name} のアイテムドロップは通常値＋イベント減少分`,
+    sameRate(gather.itemDrop, base.itemDrop + base.event * 0.5), JSON.stringify(gather));
+  check(`採取ねらいうち: ${name} の探索進行／モンスター遭遇／探索失敗は変化しない`,
+    ["progress", "encounter", "failure"].every((key) => gather[key] === base[key]), JSON.stringify(gather));
+  check(`採取ねらいうち: ${name} の一次抽選合計は通常探索と一致する`,
+    sameRate(rateSum(gatherTable), rateSum(normalTable)), `${rateSum(gatherTable)} / ${rateSum(normalTable)}`);
+  equal(`採取ねらいうち: ${name} のカテゴリ順を維持する`,
+    gatherTable.map((entry) => entry.id).join(","), primaryOf(id).map((entry) => entry.id).join(","));
+}
+equal("通常探索: テーブル変換後も設定値を書き換えない（森）",
+  PRIMARY_IDS.map((key) => Math.round(primaryRate("forest", key) * 100)).join("/"), "10/20/5/5/60");
+equal("通常探索: テーブル変換後も設定値を書き換えない（巣穴）",
+  PRIMARY_IDS.map((key) => Math.round(primaryRate("den", key) * 100)).join("/"), "5/35/10/10/40");
+
+// 解放条件：100%未満では通常探索だけ
+function modeInstance(complete) {
+  const instance = loadPrototype(file, {});
+  instance.api.move("forest");
+  instance.api.state.satiety = instance.api.maxSatiety();
+  if (complete) instance.api.worldState.locations.forest.progress = instance.api.locationDef("forest").maxProgress;
+  instance.api.render();
+  return instance;
+}
+const incompleteMode = modeInstance(false);
+equal("解放条件: 100%未満で使える探索モードは通常探索だけ",
+  incompleteMode.api.availableExplorationModes("forest").map((mode) => mode.id).join(","), "normal");
+equal("解放条件: 100%未満では採取ねらいうち探索を選択できない", incompleteMode.api.setExplorationMode("gather"), false);
+equal("解放条件: 100%未満の選択中モードは通常探索", incompleteMode.api.currentExplorationMode(), "normal");
+check("解放条件: 100%未満では探索モード選択を表示しない",
+  !/data-explore-mode/.test(incompleteMode.elements.screen.innerHTML) && !/採取ねらいうち探索/.test(incompleteMode.elements.screen.innerHTML));
+const blockedSpent = incompleteMode.api.state.staminaSpent;
+incompleteMode.api.explore(CONFIG.exploration.staminaPerEvent, { mode: "gather" });
+check("解放条件: 100%未満で採取ねらいうち探索を指定しても探索を実行しない",
+  incompleteMode.api.state.lastResult === null && incompleteMode.api.state.staminaSpent === blockedSpent,
+  JSON.stringify({ lastResult: Boolean(incompleteMode.api.state.lastResult), spent: incompleteMode.api.state.staminaSpent }));
+incompleteMode.api.explore(CONFIG.exploration.staminaPerEvent, { mode: "unknown" });
+check("解放条件: 未定義の探索モードでは探索を実行しない", incompleteMode.api.state.lastResult === null);
+
+// 100%後は通常探索と採取ねらいうち探索を選べる
+const completeMode = modeInstance(true);
+equal("解放条件: 100%後は通常探索と採取ねらいうち探索を選べる",
+  completeMode.api.availableExplorationModes("forest").map((mode) => mode.id).join(","), "normal,gather");
+equal("探索モードUI: 100%後の初期選択は通常探索", completeMode.api.currentExplorationMode(), "normal");
+check("探索モードUI: 100%後は両モードのボタンを表示し、選択中を判別できる",
+  /data-explore-mode="normal"/.test(completeMode.elements.screen.innerHTML)
+  && /data-explore-mode="gather"/.test(completeMode.elements.screen.innerHTML)
+  && /class="explore-mode active" data-explore-mode="normal"/.test(completeMode.elements.screen.innerHTML),
+  completeMode.elements.screen.innerHTML.slice(0, 1200));
+equal("探索モードUI: 採取ねらいうち探索を選択できる", completeMode.api.setExplorationMode("gather"), true);
+completeMode.api.render();
+check("探索モードUI: 選択中の採取ねらいうち探索をactive表示する",
+  /class="explore-mode active" data-explore-mode="gather"/.test(completeMode.elements.screen.innerHTML)
+  && /回復などのイベントは起きにくくなる/.test(completeMode.elements.screen.innerHTML));
+check("探索モードUI: 採取タブは未実装のまま変更しない", /<button disabled>採取/.test(completeMode.elements.screen.innerHTML));
+
+// 探索実行：一次抽選だけが変わり、消費・二次抽選は通常探索と同じ
+function modeExploreOnce(mode, rolls) {
+  const instance = modeInstance(true);
+  const spent = instance.api.state.staminaSpent;
+  withRolls(rolls.concat([0.5]), () =>
+    instance.api.explore(CONFIG.exploration.staminaPerEvent, { mode }));
+  return { instance, event: instance.api.state.lastResult.events[0], spent: instance.api.state.staminaSpent - spent };
+}
+// 森：通常は itemDrop [0,0.1) / encounter [0.1,0.3)、採取ねらいうちは itemDrop [0,0.125)
+const normalBorder = modeExploreOnce("normal", [0.11, 0.2]);
+const gatherBorder = modeExploreOnce("gather", [0.11, 0.5, 0.001]);
+equal("採取ねらいうち: 同じ乱数でも通常探索はモンスター遭遇", normalBorder.event.primaryCategory, "encounter");
+equal("採取ねらいうち: 増えたアイテムドロップ区間を一次抽選で使う", gatherBorder.event.primaryCategory, "itemDrop");
+equal("採取ねらいうち: 消費スタミナは通常探索と同じ", gatherBorder.spent, normalBorder.spent);
+const normalDrop = modeExploreOnce("normal", [0.05, 0.005, 0.001]).event;
+const gatherDrop = modeExploreOnce("gather", [0.05, 0.005, 0.001]).event;
+equal("採取ねらいうち: ドロップランク抽選は通常探索と同じ", gatherDrop.dropRank, normalDrop.dropRank);
+equal("採取ねらいうち: ランク内素材抽選は通常探索と同じ", gatherDrop.dropItem, normalDrop.dropItem);
+equal("採取ねらいうち: 取得数は通常探索と同じ", gatherDrop.dropAmount, normalDrop.dropAmount);
+check("採取ねらいうち: rank / material二次抽選関数を差し替えない",
+  /chooseAction\(CONFIG\.exploration\.dropRanks\)/.test(api.rollExplorationDrop.toString())
+  && /locationContent\(locationId\)\.drops\.tables/.test(api.rollExplorationDrop.toString()));
+// 森の採取ねらいうち：event [0.325,0.35) は残る
+const gatherEvent = modeExploreOnce("gather", [0.34, 0.5]).event;
+equal("採取ねらいうち: イベント発生は0にしない", gatherEvent.primaryCategory, "event");
+
+// 踏破率100%を超えない
+const gatherProgress = modeExploreOnce("gather", [0.9, 0.2]);
+equal("採取ねらいうち: 探索進行を引いても踏破率は加算しない", gatherProgress.event.worldGain, 0);
+equal("採取ねらいうち: 踏破率は100%を超えない",
+  gatherProgress.instance.api.locationProgress("forest"), gatherProgress.instance.api.locationDef("forest").maxProgress);
+
+// 結果表示
+const gatherResult = gatherBorder.instance.api.state.lastResult;
+equal("結果: 探索モードを結果データへ記録する", `${gatherResult.mode},${gatherResult.summary.mode}`, "gather,gather");
+check("結果UI: 採取ねらいうち探索の結果にモード名を表示する",
+  /採取ねらいうち探索/.test(gatherBorder.instance.api.resultHtml(gatherResult)));
+check("結果UI: 通常探索の結果にはモード名を追加しない",
+  !/通常探索/.test(normalBorder.instance.api.resultHtml(normalBorder.instance.api.state.lastResult)));
+check("ログ: 採取ねらいうち探索で実行したことを記録する",
+  gatherBorder.instance.api.state.systemLog.some((entry) => /探索モード：採取ねらいうち探索/.test(entry.message)));
+check("ログ: 通常探索では探索モードのログを追加しない",
+  normalBorder.instance.api.state.systemLog.every((entry) => !/探索モード：/.test(entry.message)));
+
+// 検証用連続探索も選択中の探索モードで実行し、分布サマリーにモード名を出す
+const gatherVerify = modeInstance(true);
+gatherVerify.api.setExplorationMode("gather");
+gatherVerify.api.exploreVerification(3);
+equal("検証用連続探索: 選択中の採取ねらいうち探索で実行する", gatherVerify.api.state.lastResult?.mode, "gather");
+check("検証用連続探索: 分布サマリーに探索モード名を表示する",
+  /採取ねらいうち探索 ／ 指定回数/.test(gatherVerify.api.verificationSummaryHtml(gatherVerify.api.state.lastResult)));
+
+// 移動・未達ロケーションでは通常探索へ戻る
+completeMode.api.move("town");
+equal("探索モード: ロケーション移動で通常探索へ戻る", completeMode.api.explorationMode, "normal");
+
 /* ---------- 検証用連続探索と探索分布サマリー（Issue #137 / PROTOTYPE ASSUMPTION） ---------- */
 const verifyCfg = CONFIG.verification;
 equal("検証用連続探索: 回数の範囲は1〜100", `${verifyCfg.minUnits}-${verifyCfg.maxUnits}`, "1-100");
