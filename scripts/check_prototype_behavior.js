@@ -51,26 +51,35 @@ const nextYear = api.calendarParts(open + CONFIG.time.daysPerYear * gameDay);
 equal("暦: 翌年の年数", nextYear.year, 2);
 check("暦: 年・日付・時刻を内部計算として保持", Number.isFinite(first.year) && Number.isFinite(first.dayOfMonth) && typeof first.clock === "string");
 
-api.render();
-const calendarText = ["calMonth", "calDay", "calSpecialName"]
-  .map((id) => String(elements[id] ? elements[id].textContent : "")).join(" ");
-check("暦UI: 年を表示しない", !/年/.test(calendarText), calendarText);
-check("暦UI: 具体日付を表示しない", !/日$|\d+日/.test(calendarText), calendarText);
-check("暦UI: 時刻を表示しない", !/\d{1,2}:\d{2}/.test(calendarText), calendarText);
-check("暦UI: 月名を表示する", /\S/.test(String(elements.calMonth.textContent)));
-const shownDay = api.calendarParts();
-equal("暦UI: 日行は第N の 曜日 をまとめて表示する", elements.calDay.textContent, `第${shownDay.week}の${shownDay.weekday}`);
-check("暦UI: 通常日は特別日行を隠す", elements.calSpecial.hidden === true);
-check("暦UI: 通常日は月・曜日行を表示する", elements.calNormalMonth.hidden === false && elements.calNormalDay.hidden === false);
+// 暦UIだけ専用インスタンスの時刻を固定し、他のテストやworldOpenAtへ影響させない。
+{
+  const normalNow = open + gameDay / 2;
+  let calendarNow = normalNow;
+  const { api, elements } = loadPrototype(file, undefined, { now: () => calendarNow });
+  check("暦UI: 固定時刻は通常日", api.calendarParts().special === false);
+  api.render();
+  const calendarText = ["calMonth", "calDay", "calSpecialName"]
+    .map((id) => String(elements[id] ? elements[id].textContent : "")).join(" ");
+  check("暦UI: 年を表示しない", !/年/.test(calendarText), calendarText);
+  check("暦UI: 具体日付を表示しない", !/日$|\d+日/.test(calendarText), calendarText);
+  check("暦UI: 時刻を表示しない", !/\d{1,2}:\d{2}/.test(calendarText), calendarText);
+  check("暦UI: 月名を表示する", /\S/.test(String(elements.calMonth.textContent)));
+  const shownDay = api.calendarParts();
+  equal("暦UI: 日行は第N の 曜日 をまとめて表示する", elements.calDay.textContent, `第${shownDay.week}の${shownDay.weekday}`);
+  check("暦UI: 通常日は特別日行を隠す", elements.calSpecial.hidden === true);
+  check("暦UI: 通常日は月・曜日行を表示する", elements.calNormalMonth.hidden === false && elements.calNormalDay.hidden === false);
 
-const openBefore = CONFIG.stamina.worldOpenAt;
-CONFIG.stamina.worldOpenAt = Date.now() - (CONFIG.time.daysPerYear - 1) * gameDay;
-api.render();
-check("暦UI: 特別日は特別日行だけを表示する",
-  elements.calSpecial.hidden === false && elements.calNormalMonth.hidden === true && elements.calNormalDay.hidden === true);
-equal("暦UI: 特別日の表示名", elements.calSpecialName.textContent, CONFIG.time.specialDay);
-CONFIG.stamina.worldOpenAt = openBefore;
-api.render();
+  calendarNow = open + (CONFIG.time.daysPerYear - 0.5) * gameDay;
+  check("暦UI: 固定時刻は特別日", api.calendarParts().special === true);
+  api.render();
+  check("暦UI: 特別日は特別日行だけを表示する",
+    elements.calSpecial.hidden === false && elements.calNormalMonth.hidden === true && elements.calNormalDay.hidden === true);
+  equal("暦UI: 特別日の表示名", elements.calSpecialName.textContent, CONFIG.time.specialDay);
+  calendarNow = normalNow;
+  api.render();
+  check("暦UI: 特別日から通常日に戻ると表示を復元する",
+    elements.calSpecial.hidden === true && elements.calNormalMonth.hidden === false && elements.calNormalDay.hidden === false);
+}
 
 /* ---------- 右カラムの構造（Issue #60） ---------- */
 const source = fs.readFileSync(file, "utf8");

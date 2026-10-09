@@ -53,7 +53,7 @@ const EXPORTS = [
   "moveLayer", "layerDef", "layerUnlocked", "layerEntry", "layerLocations", "normalizeLayer", "layerNavHtml",
 ];
 
-function loadPrototype(file, storeSeed) {
+function loadPrototype(file, storeSeed, { now } = {}) {
   const source = fs.readFileSync(file, "utf8");
   const script = source.split("<script>")[1].split("</script>")[0];
   const elements = {};
@@ -70,7 +70,8 @@ function loadPrototype(file, storeSeed) {
   };
   const store = Object.assign({}, storeSeed);
   const context = {
-    console, Math, Date, JSON, Number, String, Object, Array, Boolean, Set, Map, Error,
+    console, Math, Date: now ? class extends Date { static now() { return now(); } } : Date,
+    JSON, Number, String, Object, Array, Boolean, Set, Map, Error,
     setInterval: () => 0, clearTimeout() {}, setTimeout: () => 0, confirm: () => true,
     localStorage: {
       getItem: (key) => (key in store ? store[key] : null),
