@@ -3,7 +3,8 @@
 ## 開発作業の基準
 
 - Claude Code / Codex共通の開発・検証ルール（Canonical rule）はこの `AGENTS.md` を正とし、`CLAUDE.md` 等の別ファイルへ複製しない。
-- 対象Issueを、当該作業の Scope / Out of Scope / Acceptance Criteria の基準とする。
+- 対象Issueを、当該作業の Scope / Out of Scope / Acceptance Criteria の基準とする。Issueの存在だけでは操作権限を付与しない。
+- 着手前に、対象repository / branch、未commit差分を含む作業状態、並行作業・依存関係、対象environment / resource、SSOT、projectとtaskに対する明示承認の有効範囲を確認する。未確認・競合・不安全な状態が影響する操作では停止する。
 - 恒久的なゲーム仕様のSSOTは、従来どおり `docs/DOC_MAP.md` が示す設計文書とする。仕様確認では下記のルーティングに従い、`docs/` 全体を不用意に探索しない。
 
 ## 設計ドキュメント更新
@@ -29,6 +30,15 @@
 `docs/` 全体や `docs/minutes/` の全文確認を通常動作にしない。設計経緯が必要な場合だけ `docs/minutes/` を参照する。
 
 ## GitHub運用
+
+### 明示承認の範囲と停止条件
+
+- `ai-dev-foundation/GATES.md` の参照・採用、他project・過去taskの承認を、Hundred Layersの個別操作の承認として引き継がない。**このprojectと対象taskの両方**で有効なHumanの明示承認を確認する。
+- 対象IssueのScope / Out of Scope / Acceptance Criteriaと矛盾しないことを前提に、対象task・目的・完了条件、repository / branchまたはchange set、environment / resource、許可操作、Humanに残す判断・承認・実行操作、承認者・日時・根拠となる承認への参照・有効範囲・終了条件を、当該Issue / PR本文等の既存の作業記録へ残す。記録しただけで権限が生じるわけではない。
+- 明示承認された範囲では、**許可された工程に限り**、調査 → 実装・文書編集 → 必要なテスト・simulation → 作業branchへのcommit / push → PR作成を継続できる。工程の切替や、範囲内の通常のrepository書込み・低riskなcommitごとに再承認を求めない。この工程例は全操作への包括許可ではない。
+- 新たな未解決の仕様判断、またはscope / 対象repository・branch・environment・resource / 操作 / 権限 / risk・影響範囲 / rollback可能性の実質的変更が発生した場合、**影響する操作を停止**し、差分と必要な判断・再承認をHumanへ渡す。許可済みの他工程を無条件に停止する必要はない。
+- Production・稼働中shared resource、credential、破壊的・不可逆操作などは必要な操作別承認やHuman実行を維持する。tool・実行環境の安全制約を省略・迂回せず、Agentはpermission拡張・guardrail解除・scope拡大を自己承認しない。
+- mainへの直接pushはGitHub Pages公開と、設定されていればDiscord通知へつながる。作業branchへの通常のpush承認は、main直接push・merge・auto-merge・deploy・workflow_dispatchの許可ではない。Agent自身はmergeしない。
 
 - Issue・Pull Requestの作成・更新時は、`CONTRIBUTING.md`の命名・本文ルールに従う。
 - Human Verificationが残る場合、自動検証とPR作成後に `REVIEW_REQUIRED` として停止し、未確認項目を人間へ引き渡す。
